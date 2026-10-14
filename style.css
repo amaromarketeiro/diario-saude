@@ -207,6 +207,72 @@ textarea { resize: vertical; }
   .card, .bloco, .numero { box-shadow: none; break-inside: avoid; border-color: #ccc; }
 }
 
+/* ---------- Família (v3) ---------- */
+.seletor-fam { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; margin-bottom: 4px; scrollbar-width: none; }
+.chip-fam {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 14px 6px 8px;
+  border-radius: 999px; border: 1px solid var(--borda); background: var(--cartao); color: var(--texto);
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.chip-fam.ativo { background: var(--prim); border-color: var(--prim); color: #fff; }
+@media (prefers-color-scheme: dark) { .chip-fam.ativo { color: #042f2e; } }
+.chip-fam.mais { padding: 6px 14px; font-size: 18px; }
+.avatar {
+  --cor: var(--prim); flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--cor); color: #fff; font-weight: 700; font-size: 15px; letter-spacing: .02em;
+}
+.avatar.mini { width: 26px; height: 26px; font-size: 11px; }
+.avatar.grande { width: 60px; height: 60px; font-size: 22px; }
+.tag-fam {
+  --cor: var(--prim); display: inline-flex; align-items: center; gap: 5px; align-self: flex-start;
+  font-size: 12px; font-weight: 700; color: var(--texto); margin-bottom: 2px;
+}
+.tag-fam::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--cor); }
+.familiar-linha { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; margin: 0 8px 6px 0; }
+.cabeca.com-avatar { display: flex; gap: 14px; align-items: center; }
+.cabeca.com-avatar .badge { margin-top: 6px; display: inline-block; }
+.alerta-txt { color: var(--alerta); }
+.cores div { display: flex; flex-wrap: wrap; gap: 10px; }
+.cores { border: 0; padding: 0; margin: 0; }
+.cor input { position: absolute; opacity: 0; }
+.cor span { display: block; width: 40px; height: 40px; border-radius: 50%; background: var(--cor); cursor: pointer; border: 3px solid transparent; }
+.cor input:checked + span { border-color: var(--texto); box-shadow: 0 0 0 2px var(--cartao) inset; }
+.cor input:focus-visible + span { outline: 2px solid var(--prim); outline-offset: 2px; }
+.dupla { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+.linha-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.linha-form .campo { flex: 1 1 160px; }
+.pend-grupo summary { cursor: pointer; list-style: none; }
+.pend-grupo summary::-webkit-details-marker { display: none; }
+.pend-grupo[open] summary { margin-bottom: 8px; }
+.carregando { text-align: center; padding: 48px 16px; color: var(--mudo); }
+
+/* Menu de criação rápida */
+.folha {
+  position: absolute; left: 0; right: 0; bottom: 0; background: var(--cartao); border-radius: 20px 20px 0 0;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px;
+  max-width: 640px; margin: 0 auto;
+}
+.folha h3 { margin: 0 0 4px; }
+.opcao { display: flex; align-items: center; gap: 14px; padding: 14px; border: 1px solid var(--borda); border-radius: 14px; }
+.opcao > span:first-child { font-size: 28px; }
+.opcao span { display: flex; flex-direction: column; }
+.opcao small { color: var(--mudo); }
+button.fab { border: 0; font: inherit; font-weight: 700; cursor: pointer; }
+
+/* Jornada */
+.jornada { margin-top: 10px; }
+.j-no { background: var(--cartao); border: 1px solid var(--borda); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+.j-no.j-retorno { margin: 10px 0 0 10px; border-left: 4px solid var(--prim); }
+.j-cab { display: flex; gap: 10px; align-items: center; }
+.j-cab span:last-child { display: flex; flex-direction: column; }
+.j-cab small { color: var(--mudo); }
+.j-ic { font-size: 22px; }
+.j-exame { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin: 10px 0 0 14px; padding: 10px; border-radius: 10px; background: var(--cinza-claro); }
+.j-exame small { color: var(--mudo); }
+.j-pend { color: var(--alerta) !important; font-size: 13px; margin: 6px 0 0; font-weight: 600; }
+.j-docs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.j-doc { font-size: 12px; background: var(--prim-claro); border-radius: 999px; padding: 2px 8px; }
+
 .toast {
   position: fixed; left: 16px; right: 16px; bottom: calc(150px + env(safe-area-inset-bottom)); z-index: 40;
   max-width: 480px; margin: 0 auto; background: #1c2b2a; color: #fff; padding: 12px 16px; border-radius: 12px;

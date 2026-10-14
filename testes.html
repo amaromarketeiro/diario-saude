@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Testes · Diário de Saúde</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 16px; background: #f4f7f6; color: #1c2b2a; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    #resumo { font-weight: 700; margin: 8px 0 16px; }
+    .ok { color: #15803d; } .falha { color: #b91c1c; }
+    li { margin: 2px 0; } pre { white-space: pre-wrap; font-size: 12px; background: #fff; padding: 6px; border-radius: 6px; }
+  </style>
+  <!-- Banco exclusivo dos testes: nunca toca nos dados reais -->
+  <script>window.DB_NOME_FORCADO = 'diario-saude-testes-auto';</script>
+  <script src="db.js?v=4"></script>
+  <script src="nucleo.js?v=4"></script>
+</head>
+<body>
+  <h1>Testes automáticos</h1>
+  <p>Usa um banco separado (<code>diario-saude-testes-auto</code>) com dados fictícios.</p>
+  <div id="resumo">Rodando…</div>
+  <ul id="lista"></ul>
+<script>
+'use strict';
+const resultados = [];
+function verificar(cond, msg) { if (!cond) throw new Error(msg); }
+function igual(a, b, msg) { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg}: esperado ${JSON.stringify(b)}, obtido ${JSON.stringify(a)}`); }
+async function teste(nome, fn) {
+  try { await fn(); resultados.push({ nome, ok: true }); }
+  catch (e) { resultados.push({ nome, ok: false, erro: e.message }); }
+}
+const apagarBanco = async () => { await fecharDB(); await new Promise((ok) => { const r = indexedDB.deleteDatabase(DB_NOME); r.onsuccess = r.onerror = r.onblocked = () => ok(); }); };
+
+// Dados fictícios no formato da versão 2 (sem familiares)
+const v2 = () => ({
+  consultas: [
+    { id: 'c1', data: '2026-01-10', hora: '09:00', medico: 'Dra. Fictícia Silva', especialidade: 'Clínico geral', status: 'realizada' },
+    { id: 'c2', data: '2026-02-10', medico: 'Dra. Fictícia Silva', status: 'agendada', retornoDe: ['e1', 'e2'] },
+  ],
+  exames: [
+    { id: 'e1', nome: 'Hemograma', consultaId: 'c1', status: 'resultado', dataExame: '2026-01-15' },
+    { id: 'e2', nome: 'Raio-X', consultaId: 'c1', status: 'resultado', dataExame: '2026-01-16' },
+    { id: 'e3', nome: 'Glicemia', consultaId: 'c-inexistente', status: 'solicitado' },
+  ],
+  medicos: [{ id: 'm1', nome: 'Dra. Fictícia Silva', especialidade: 'Clínico geral' }],
+  anexos: [
+    { id: 'a1', tipoDono: 'exame', idDono: 'e1', tipoDoc: 'resultado', nome: 'laudo.pdf', mime: 'application/pdf' },
+    { id: 'a2', tipoDono: 'consulta', idDono: 'c-apagada', tipoDoc: 'receita', nome: 'r.png', mime: 'image/png' },
+  ],
+});
+
+(async () => {
+  // ---------- Conversão (funções puras) ----------
+  await teste('Migração v2→v3 cria perfil principal e vincula tudo a ele', () => {
+    const { dados, relatorio, principalId } = converterDados(v2());
+    verificar(relatorio.familiarCriado, 'perfil principal não criado');
+    igual(dados.familiares.length, 1, 'familiares');
+    verificar(dados.consultas.every((c) => c.pacienteId === principalId), 'consulta sem familiar');
+    verificar(dados.exames.every((e) => e.pacienteId === principalId), 'exame sem familiar');
+    igual(dados.consultas.length + dados.exames.length + dados.anexos.length, 7, 'nenhum registro pode sumir');
+  });
+
+  await teste('Migração preserva relações e define a consulta de origem do retorno', () => {
+    const { dados } = converterDados(v2());
+    const c2 = dados.consultas.find((c) => c.id === 'c2');
+    igual(c2.retornoDe, ['e1', 'e2'], 'retornoDe');
+    igual(c2.consultaOrigemId, 'c1', 'consultaOrigemId');
+    igual(dados.exames.find((e) => e.id === 'e1').consultaId, 'c1', 'consultaId preservado');
+  });
+
+  await teste('Migração trata vínculos quebrados sem apagar registros', () => {
+    const { dados, relatorio } = converterDados(v2());
+    igual(dados.exames.find((e) => e.id === 'e3').consultaId, null, 'vínculo inexistente removido');
+    verificar(dados.anexos.find((a) => a.id === 'a2').semDono, 'anexo órfão deve ser sinalizado');
+    verificar(relatorio.avisos.length >= 2, 'avisos registrados');
+    verificar(!JSON.stringify(relatorio.avisos).includes('Hemograma'), 'avisos não podem conter conteúdo médico');
+  });
+
+  await teste('Migração é idempotente (rodar duas vezes não muda nada)', () => {
+    const r1 = converterDados(v2());
+    const r2 = converterDados(r1.dados);
+    verificar(!houveMudanca(r2.relatorio), 'segunda passada alterou dados: ' + JSON.stringify(r2.relatorio));
+    igual(r2.dados, r1.dados, 'dados');
+  });
+
+  await teste('Migração corrige exame com familiar diferente da consulta e remove retorno cruzado', () => {
+    const fa = criarFamiliar({ nome: 'A', principal: true }), fb = criarFamiliar({ nome: 'B' });
+    const { dados, relatorio } = converterDados({
+      familiares: [fa, fb],
+      consultas: [{ id: 'c1', pacienteId: fa.id, status: 'realizada' }, { id: 'c2', pacienteId: fb.id, status: 'agendada', retornoDe: ['e1'] }],
+      exames: [{ id: 'e1', pacienteId: fb.id, consultaId: 'c1', status: 'resultado' }],
+    });
+    igual(dados.exames[0].pacienteId, fa.id, 'exame segue o familiar da consulta');
+    igual(dados.consultas[1].retornoDe, [], 'retorno de outro familiar removido');
+    verificar(relatorio.examesCorrigidos === 1 && relatorio.vinculosRemovidos === 1, 'relatório');
+  });
+
+  // ---------- Pendências ----------
+  await teste('Pendências: os 6 tipos, cada um com o familiar certo', () => {
+    const A = 'fa', B = 'fb', h = '2026-05-10';
+    const cs = [
+      { id: 'c1', pacienteId: A, status: 'agendada', data: '2026-05-01' },
+      { id: 'c2', pacienteId: B, status: 'realizada', data: '2026-04-01', retornoNecessario: true },
+      { id: 'c3', pacienteId: A, status: 'realizada', data: '2026-04-01', retornoNecessario: true },
+      { id: 'c4', pacienteId: A, status: 'agendada', data: '2026-06-01', consultaOrigemId: 'c3' },
+    ];
+    const es = [
+      { id: 'e1', pacienteId: A, status: 'solicitado' },
+      { id: 'e2', pacienteId: B, status: 'marcado', dataExame: '2026-05-05' },
+      { id: 'e3', pacienteId: A, status: 'realizado', dataResultado: '2026-05-09' },
+      { id: 'e4', pacienteId: B, status: 'resultado' },
+      { id: 'e5', pacienteId: B, status: 'resultado', resultadoApresentado: true },
+    ];
+    const p = calcularPendencias(cs, es, h);
+    const por = Object.fromEntries(p.map((x) => [x.tipo + ':' + x.id, x.pacienteId]).sort((a, b) => a[0].localeCompare(b[0])));
+    igual(por, { 'aguardando_resultado:e3': A, 'consulta_sem_registro:c1': A, 'exame_nao_confirmado:e2': B,
+      'exame_sem_data:e1': A, 'resultado_nao_apresentado:e4': B, 'retorno_nao_agendado:c2': B }, 'pendências (c3 já tem retorno, e5 já foi apresentado)');
+  });
+
+  // ---------- Retornos ----------
+  await teste('Retorno agrupa vários exames de um único familiar', () => {
+    const cs = [{ id: 'c1', pacienteId: 'A', medico: 'Dra. X', status: 'realizada' }];
+    const es = [
+      { id: 'e1', pacienteId: 'A', consultaId: 'c1', status: 'resultado', nome: 'Hemograma' },
+      { id: 'e2', pacienteId: 'A', consultaId: 'c1', status: 'resultado', nome: 'Raio-X' },
+      { id: 'e3', pacienteId: 'A', consultaId: 'c1', status: 'realizado', nome: 'Pendente' },
+    ];
+    const r = prepararRetorno({ exameId: 'e1' }, cs, es);
+    igual(r.retornoDe, ['e1', 'e2'], 'grupo');
+    igual(r.consultaOrigemId, 'c1', 'origem');
+    igual(r.pacienteId, 'A', 'familiar');
+  });
+
+  await teste('Retorno nunca agrupa exames de familiares diferentes', () => {
+    const cs = [{ id: 'c1', pacienteId: 'A', status: 'realizada' }];
+    const es = [
+      { id: 'e1', pacienteId: 'A', consultaId: 'c1', status: 'resultado', nome: 'X' },
+      { id: 'e2', pacienteId: 'B', consultaId: 'c1', status: 'resultado', nome: 'Y' }, // dado inconsistente de propósito
+    ];
+    igual(prepararRetorno({ exameId: 'e1' }, cs, es).retornoDe, ['e1'], 'grupo só do familiar A');
+    verificar(validarConsulta({ id: 'n', pacienteId: 'A', retornoDe: ['e1', 'e2'] }, cs, es), 'validação deveria bloquear');
+    verificar(!validarConsulta({ id: 'n', pacienteId: 'A', retornoDe: ['e1'] }, cs, es), 'validação não deveria bloquear');
+    verificar(validarExame({ id: 'e9', pacienteId: 'B', consultaId: 'c1' }, cs), 'exame de outro familiar na consulta deveria ser bloqueado');
+  });
+
+  // ---------- Jornada ----------
+  await teste('Jornada liga consulta → exames → retorno → novo retorno', () => {
+    const cs = [
+      { id: 'c1', pacienteId: 'A', data: '2026-01-01' },
+      { id: 'c2', pacienteId: 'A', data: '2026-02-01', consultaOrigemId: 'c1', retornoDe: ['e1'] },
+      { id: 'c3', pacienteId: 'A', data: '2026-03-01', consultaOrigemId: 'c2' },
+    ];
+    const es = [{ id: 'e1', pacienteId: 'A', consultaId: 'c1' }];
+    const an = [{ id: 'a1', tipoDono: 'consulta', idDono: 'c1' }];
+    igual(raizJornada('c3', cs).id, 'c1', 'raiz');
+    const j = montarJornada('c1', cs, es, an);
+    igual([j.exames.length, j.documentos.length, j.retornos[0].consulta.id, j.retornos[0].retornos[0].consulta.id], [1, 1, 'c2', 'c3'], 'estrutura');
+    // ciclo não pode travar
+    const ciclo = [{ id: 'x', consultaOrigemId: 'y' }, { id: 'y', consultaOrigemId: 'x' }];
+    verificar(raizJornada('x', ciclo), 'ciclo');
+  });
+
+  // ---------- Banco de dados real (IndexedDB) ----------
+  await teste('IndexedDB: migração do banco v2 para v3, com cópia de segurança e idempotência', async () => {
+    await apagarBanco();
+    // Cria um banco no formato exato da versão 2
+    await new Promise((ok, erro) => {
+      const r = indexedDB.open(DB_NOME, 2);
+      r.onupgradeneeded = () => ['consultas', 'exames', 'anexos', 'medicos'].forEach((t) => r.result.createObjectStore(t, { keyPath: 'id' }));
+      r.onsuccess = () => {
+        const d = v2();
+        const t = r.result.transaction(['consultas', 'exames', 'anexos', 'medicos'], 'readwrite');
+        d.anexos.forEach((a) => (a.blob = new Blob(['conteudo ficticio ' + a.id], { type: a.mime })));
+        for (const n of ['consultas', 'exames', 'anexos', 'medicos']) d[n].forEach((x) => t.objectStore(n).put(x));
+        t.oncomplete = () => { r.result.close(); ok(); };
+        t.onerror = () => erro(t.error);
+      };
+      r.onerror = () => erro(r.error);
+    });
+    const res = await migrarBanco();
+    verificar(res.migrado, 'deveria migrar');
+    igual((await abrirDB()).version, 3, 'versão do banco');
+    const [fs, cs, es, an] = await Promise.all(['familiares', 'consultas', 'exames', 'anexos'].map((t) => DB.todos(t)));
+    igual([fs.length, cs.length, es.length, an.length], [1, 2, 3, 2], 'contagens');
+    verificar(cs.every((c) => c.pacienteId === fs[0].id) && es.every((e) => e.pacienteId === fs[0].id), 'vínculo ao principal');
+    igual(await an.find((a) => a.id === 'a1').blob.text(), 'conteudo ficticio a1', 'anexo preservado');
+    const copia = await DB.pegar('meta', 'copia-v2');
+    verificar(copia && copia.consultas.length === 2 && !copia.consultas[0].pacienteId, 'cópia v2 intacta');
+    igual((await DB.pegar('meta', 'esquema')).versao, 3, 'meta');
+    const res2 = await migrarBanco();
+    verificar(res2.jaMigrado, 'segunda execução não deveria migrar de novo');
+    igual((await DB.todos('familiares')).length, 1, 'não duplica perfil');
+  });
+
+  await teste('IndexedDB: reagendar consulta mantém exames, documentos e retorno', async () => {
+    const c1 = await DB.pegar('consultas', 'c1');
+    c1.data = '2026-01-20';
+    await DB.salvar('consultas', c1);
+    const [cs, es, an] = await Promise.all(['consultas', 'exames', 'anexos'].map((t) => DB.todos(t)));
+    const j = montarJornada('c1', cs, es, an);
+    igual([j.consulta.data, j.exames.length, j.retornos[0].consulta.id], ['2026-01-20', 2, 'c2'], 'vínculos após reagendar');
+    verificar(typeof c1.atualizadoEm === 'number', 'atualizadoEm registrado');
+  });
+
+  await teste('Backup v3: gerar, verificar integridade e restaurar tudo', async () => {
+    const pacote = JSON.parse(JSON.stringify(await montarBackup()));
+    verificar(pacote.integridade?.hash?.length === 64, 'hash SHA-256');
+    igual(pacote.contagem, { consultas: 2, exames: 3, anexos: 2, medicos: 1, familiares: 1 }, 'contagem');
+    await restaurarDados({ consultas: [], exames: [], anexos: [], medicos: [], familiares: [] });
+    igual((await DB.todos('consultas')).length, 0, 'banco limpo');
+    const { dados } = await prepararRestauracao(pacote);
+    await restaurarDados(dados);
+    const an = await DB.todos('anexos');
+    igual(an.length, 2, 'anexos restaurados');
+    igual(await an.find((a) => a.id === 'a1').blob.text(), 'conteudo ficticio a1', 'conteúdo do anexo');
+    igual((await DB.pegar('consultas', 'c2')).retornoDe, ['e1', 'e2'], 'relações restauradas');
+  });
+
+  await teste('Backup: arquivo alterado é recusado com mensagem clara', async () => {
+    const pacote = JSON.parse(JSON.stringify(await montarBackup()));
+    pacote.dados.consultas[0].medico = 'alterado';
+    let msg = '';
+    try { await prepararRestauracao(pacote); } catch (e) { msg = e.message; }
+    verificar(msg.includes('integridade'), 'deveria falhar na integridade: ' + msg);
+    let msg2 = '';
+    try { await prepararRestauracao({ app: 'outro' }); } catch (e) { msg2 = e.message; }
+    verificar(msg2.includes('não é um backup'), 'arquivo estranho');
+  });
+
+  await teste('Backup antigo (v2) é convertido na restauração', async () => {
+    const antigo = { app: 'diario-saude', versao: 2, ...v2() };
+    antigo.anexos = antigo.anexos.map((a) => ({ ...a, dados: 'data:text/plain;base64,' + btoa('x') }));
+    const { dados, relatorio } = await prepararRestauracao(antigo);
+    verificar(relatorio.familiarCriado && dados.consultas.every((c) => c.pacienteId), 'convertido para v3');
+  });
+
+  await teste('Restauração com falha não deixa dados pela metade (transação atômica)', async () => {
+    const antes = (await DB.todos('consultas')).length;
+    let falhou = false;
+    try { await restaurarDados({ consultas: [{ id: 'novo' }, { semId: true }], exames: [], anexos: [], medicos: [], familiares: [] }); }
+    catch { falhou = true; }
+    verificar(falhou, 'deveria falhar');
+    igual((await DB.todos('consultas')).length, antes, 'dados antigos intactos');
+  });
+
+  await apagarBanco();
+
+  // ---------- Resultado ----------
+  const ok = resultados.filter((r) => r.ok).length;
+  document.getElementById('resumo').innerHTML = `<span class="${ok === resultados.length ? 'ok' : 'falha'}">${ok} de ${resultados.length} testes passaram</span>`;
+  document.getElementById('lista').innerHTML = resultados.map((r) =>
+    `<li class="${r.ok ? 'ok' : 'falha'}">${r.ok ? '✔' : '✘'} ${r.nome}${r.erro ? `<pre>${r.erro.replace(/</g, '&lt;')}</pre>` : ''}</li>`).join('');
+  window.RESULTADOS_TESTES = resultados;
+})();
+</script>
+</body>
+</html>

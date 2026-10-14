@@ -18,7 +18,7 @@ async function registrarMedico(nome, dados = {}, medicos = null) {
     return;
   }
   const novo = { id: novoId(), nome: nome.trim(), especialidade: dados.especialidade || '', local: dados.local || '',
-    registro: '', telefone: '', criadoEm: Date.now() };
+    registro: '', telefone: '', criadoEm: Date.now(), atualizadoEm: Date.now() };
   medicos.push(novo);
   await DB.salvar('medicos', novo);
 }
@@ -63,12 +63,13 @@ async function telaMedico(id) {
   if (!m) return naoEncontrado();
   const [cs, es] = await Promise.all([DB.todos('consultas'), DB.todos('exames')]);
   const n = normalizar(m.nome);
-  const consultas = cs.filter((c) => normalizar(c.medico) === n);
-  const exames = es.filter((e) => normalizar(e.medico) === n);
+  // Respeita o filtro de familiar: médicos são da família toda, o histórico é de cada um
+  const consultas = doFiltro(cs).filter((c) => normalizar(c.medico) === n);
+  const exames = doFiltro(es).filter((e) => normalizar(e.medico) === n);
   const realizadas = consultas.filter((c) => c.status === 'realizada');
   const proxima = consultas.filter((c) => c.status === 'agendada' && c.data >= hoje()).sort((a, b) => a.data.localeCompare(b.data))[0];
 
-  render(`<div class="detalhe">
+  render(`${seletorFamilia()}<div class="detalhe">
     <div class="cabeca">
       <h2>${esc(m.nome)}</h2>
       <p>${esc(m.especialidade || 'Especialidade não informada')}</p>
@@ -82,7 +83,7 @@ async function telaMedico(id) {
     </div>
     ${proxima ? `<div class="bloco"><h3>Próxima consulta</h3>${cardConsulta(proxima)}</div>` : ''}
     <div class="acoes"><a class="btn primario" href="#/consulta/nova?medico=${id}">📅 Agendar consulta</a></div>
-    <div class="bloco"><h3>Histórico com este médico</h3>${listaLinhaDoTempo(linhaDoTempo(consultas, exames))}</div>
+    <div class="bloco"><h3>Histórico com este médico${filtroAtual() !== 'todos' ? ' · ' + esc(nomeFamiliar(filtroAtual())) : ''}</h3>${listaLinhaDoTempo(linhaDoTempo(consultas, exames))}</div>
     <div class="acoes rodape">
       <a class="btn" href="#/medico/${id}/editar">✏️ Editar</a>
       <button class="btn perigo" id="excluir">🗑️ Excluir</button>
