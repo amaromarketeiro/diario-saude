@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <title>Diário de Saúde</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+  <header class="topo">
+    <button id="voltar" class="voltar" aria-label="Voltar" hidden>‹</button>
+    <h1 id="titulo">Diário de Saúde</h1>
+  </header>
+
+  <main id="app"></main>
+
+  <nav class="abas">
+    <a href="#/agenda" data-aba="agenda"><span>📅</span>Agenda</a>
+    <a href="#/consultas" data-aba="consultas"><span>🩺</span>Consultas</a>
+    <a href="#/exames" data-aba="exames"><span>🧪</span>Exames</a>
+    <a href="#/relatorios" data-aba="relatorios"><span>📊</span>Relatórios</a>
+    <a href="#/mais" data-aba="mais"><span>⚙️</span>Mais</a>
+  </nav>
+
+  <div id="modal" class="modal" hidden></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="db.js?v=3"></script>
+  <script src="medicos.js?v=3"></script>
+  <script src="relatorios.js?v=3"></script>
+  <script src="app.js?v=3"></script>
+</body>
+</html>

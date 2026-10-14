@@ -1,0 +1,10 @@
+# Nunca versionar dados médicos reais (backups exportados, calendários, anexos)
+backup-*.json
+*.backup.json
+*.ics
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.heic
+dados/
