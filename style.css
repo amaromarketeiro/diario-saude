@@ -40,7 +40,8 @@ a { color: inherit; text-decoration: none; }
   background: var(--prim); color: #fff; padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top));
 }
 @media (prefers-color-scheme: dark) { .topo { background: #115e59; } }
-.topo h1 { margin: 0; font-size: 19px; font-weight: 650; }
+.topo h1 { margin: 0; font-size: 19px; font-weight: 650; flex: 1; min-width: 0; }
+.versao { flex: none; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, .18); color: #fff; }
 .voltar { background: none; border: 0; color: #fff; font-size: 30px; line-height: 1; padding: 0 6px 4px 0; cursor: pointer; }
 
 main { max-width: 640px; margin: 0 auto; padding: 16px; }

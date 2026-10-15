@@ -8,12 +8,13 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <header class="topo">
     <button id="voltar" class="voltar" aria-label="Voltar" hidden>‹</button>
     <h1 id="titulo">Diário de Saúde</h1>
+    <a id="versao" class="versao" href="#/mais" title="Versão instalada neste aparelho"></a>
   </header>
 
   <main id="app"></main>
@@ -30,11 +31,11 @@
   <div id="toast" class="toast" hidden></div>
 
   <!-- Ordem importa: banco → regras → telas. Ao mudar arquivos, aumente o v= aqui e no sw.js -->
-  <script src="db.js?v=10"></script>
-  <script src="nucleo.js?v=10"></script>
-  <script src="familia.js?v=10"></script>
-  <script src="medicos.js?v=10"></script>
-  <script src="relatorios.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="db.js?v=11"></script>
+  <script src="nucleo.js?v=11"></script>
+  <script src="familia.js?v=11"></script>
+  <script src="medicos.js?v=11"></script>
+  <script src="relatorios.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

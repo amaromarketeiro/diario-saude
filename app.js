@@ -14,6 +14,12 @@ const STATUS_EXAME = { solicitado: 'Sem data marcada', marcado: 'Marcado', reali
 const NOME_PASSO = { solicitado: 'Pedido', marcado: 'Marcado', realizado: 'Feito', resultado: 'Resultado' };
 const ICONE = { consulta: '🩺', exame: '🧪', resultado: '📄' };
 
+// ===================== Versão =====================
+// O número vem do próprio arquivo carregado (app.js?v=N): se mostrar o número novo, a atualização chegou.
+// Ao publicar: aumente o v= no index.html e no sw.js, e atualize DATA_VERSAO.
+const VERSAO_APP = (document.querySelector('script[src*="app.js"]')?.getAttribute('src').match(/v=(\d+)/) || [])[1] || '?';
+const DATA_VERSAO = '15/10/2026';
+
 // ===================== Utilidades de tela =====================
 // (novoId, hoje, lerData, paraISO, pad e dataBR ficam em nucleo.js)
 const $ = (s, el = document) => el.querySelector(s);
@@ -1017,7 +1023,16 @@ async function telaMais() {
       <li>Sincronização entre aparelhos</li>
       <li>Leitura automática dos pedidos e laudos</li>
       <li>Gráficos da evolução dos valores dos exames</li></ul></div>
-    <p class="mudo centro">Diário de Saúde · versão 3</p>`, 'Mais');
+    <div class="bloco centro"><h3>ℹ️ Sobre</h3>
+      <p>Diário de Saúde · <strong>versão ${VERSAO_APP}</strong></p>
+      <p class="mudo">Publicada em ${DATA_VERSAO}${MODO_TESTE ? ' · modo de teste' : ''}</p>
+      <button class="btn pequeno" id="buscar-atualizacao">🔄 Procurar atualização</button></div>`, 'Mais');
+  $('#buscar-atualizacao').onclick = async () => {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    await reg?.update().catch(() => { });
+    toast('Recarregando para buscar a versão mais nova…');
+    setTimeout(() => location.reload(), 900);
+  };
   const b = $('#ativar');
   if (b) b.onclick = async () => { await pedirPermissaoAvisos(); telaMais(); };
   const bp = $('#proteger');
@@ -1140,5 +1155,6 @@ let pedidoInstalacao = null;
 window.addEventListener('beforeinstallprompt', (ev) => { ev.preventDefault(); pedidoInstalacao = ev; });
 
 $('#voltar').onclick = () => history.back();
+$('#versao').textContent = 'v' + VERSAO_APP;
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 iniciar();
