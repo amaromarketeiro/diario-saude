@@ -262,9 +262,7 @@ async function telaAgenda() {
       <button class="btn pequeno" id="ativar-avisos">Ativar avisos</button></div>`;
   }
   if (!proximos.length && !pendencias.length) {
-    const agora = new Date();
-    html += `<div class="vazio"><div class="cal-hoje cal-grande" aria-hidden="true">
-      <b>${agora.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase()}</b><i>${agora.getDate()}</i></div><h2>Nada agendado${filtroAtual() !== 'todos' ? ' para ' + esc(nomeFamiliar(filtroAtual())) : ''}</h2>
+    html += `<div class="vazio"><div class="cal-grande">${calendarioHoje()}</div><h2>Nada agendado${filtroAtual() !== 'todos' ? ' para ' + esc(nomeFamiliar(filtroAtual())) : ''}</h2>
       <p>Toque em “+ Novo” para cadastrar uma consulta ou um exame.</p></div>`;
   }
   if (pendencias.length) {
@@ -1159,11 +1157,24 @@ window.addEventListener('beforeinstallprompt', (ev) => { ev.preventDefault(); pe
 $('#voltar').onclick = () => history.back();
 $('#versao').textContent = 'v' + VERSAO_APP;
 
-// Ícone da aba Agenda com o mês e o dia de hoje (atualiza na virada do dia e ao voltar ao app)
+// Desenho de calendário de mesa com o mês e o dia de hoje (aba Agenda e Agenda vazia)
+function calendarioHoje() {
+  const d = new Date();
+  const mes = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase();
+  return `<svg viewBox="0 0 32 32" class="cal-svg" role="img" aria-label="Hoje, ${d.getDate()} de ${mes}">
+    <rect class="cal-folha" x="2.5" y="5.5" width="27" height="25" rx="6"/>
+    <path class="cal-faixa" d="M2.5 11.5a6 6 0 0 1 6-6h15a6 6 0 0 1 6 6v3h-27z"/>
+    <rect class="cal-argola" x="6.5" y="2.5" width="3" height="5.5" rx="1.5"/>
+    <rect class="cal-argola" x="22.5" y="2.5" width="3" height="5.5" rx="1.5"/>
+    <text class="cal-mes" x="16" y="13" text-anchor="middle">${mes}</text>
+    <text class="cal-dia" x="16" y="27.8" text-anchor="middle">${d.getDate()}</text>
+  </svg>`;
+}
+
+// Atualiza o ícone da aba na virada do dia e ao voltar ao app
 function atualizarCalendarioHoje() {
   const d = new Date();
-  $('#cal-hoje b').textContent = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase();
-  $('#cal-hoje i').textContent = d.getDate();
+  $('#cal-hoje').innerHTML = calendarioHoje();
   const meiaNoite = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 5);
   clearTimeout(atualizarCalendarioHoje.timer);
   atualizarCalendarioHoje.timer = setTimeout(atualizarCalendarioHoje, meiaNoite - d);

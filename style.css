@@ -53,20 +53,19 @@ main { max-width: 640px; margin: 0 auto; padding: 16px; }
 .abas a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 10px; font-size: 12px; color: var(--mudo); }
 .abas a span { font-size: 22px; filter: grayscale(1); opacity: .7; }
 .abas a.ativa { color: var(--prim); font-weight: 600; }
-.abas a .cal-hoje {
-  filter: none; width: 24px; height: 25px; margin: 3px 0 4px; display: flex; flex-direction: column;
-  border-radius: 5px; overflow: hidden; background: #fff; border: 1.5px solid var(--mudo); font-size: 0; line-height: 1;
-}
-.cal-hoje b { display: block; background: var(--mudo); color: #fff; font-size: 7px; font-weight: 700; padding: 1.5px 0 1px; letter-spacing: .02em; }
-.cal-hoje i { display: block; flex: 1; font-style: normal; font-weight: 800; font-size: 12px; color: #1c2b2a; padding-top: 1px; }
-.cal-grande {
-  width: 64px; height: 68px; margin: 0 auto; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden;
-  background: #fff; border: 2px solid #dc2626; line-height: 1;
-}
-.cal-grande b { background: #dc2626; font-size: 13px; padding: 5px 0 4px; }
-.cal-grande i { font-size: 30px; padding-top: 6px; }
-.abas a.ativa .cal-hoje { border-color: #dc2626; opacity: 1; }
-.abas a.ativa .cal-hoje b { background: #dc2626; }
+/* Calendário de mesa com a data de hoje (aba Agenda e Agenda vazia) */
+.cal-svg { --cal-cor: #ef4444; --cal-argola: #475569; display: block; width: 100%; height: 100%; overflow: visible; }
+.cal-folha { fill: #fff; stroke: var(--cal-cor); stroke-width: 1.6; }
+.cal-faixa { fill: var(--cal-cor); }
+.cal-argola { fill: var(--cal-argola); stroke: #fff; stroke-width: 1; }
+.cal-svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight: 800; }
+.cal-mes { fill: #fff; font-size: 6px; letter-spacing: .3px; }
+.cal-dia { fill: #1f2937; font-size: 13px; letter-spacing: -.3px; }
+.abas a .cal-hoje { width: 30px; height: 30px; margin: 1px 0; filter: none; }
+.abas a:not(.ativa) .cal-svg { --cal-cor: #94a3b8; --cal-argola: #94a3b8; }
+.abas a:not(.ativa) .cal-dia { fill: #64748b; }
+.cal-grande { width: 76px; height: 76px; margin: 0 auto 4px; }
+.cal-grande .cal-folha { stroke-width: 1.2; }
 .abas a.ativa span { filter: none; opacity: 1; }
 
 .secao { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--mudo); margin: 22px 0 10px; }
