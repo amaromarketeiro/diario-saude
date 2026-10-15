@@ -246,6 +246,7 @@ async function telaAgenda() {
   const pendencias = calcularPendencias(doFiltro(cs), doFiltro(es)).filter((p) => p.atencao);
   let html = seletorFamilia();
 
+  if (await backupVencido()) html += avisoBackup();
   if (FAMILIA.principal?.nome === 'Eu') {
     html += `<div class="aviso">👤 Personalize o perfil principal e cadastre seus familiares.
       <a class="btn pequeno" href="#/familiar/${FAMILIA.principal.id}/editar">Editar perfil</a></div>`;
@@ -273,6 +274,7 @@ async function telaAgenda() {
   html += '<button class="fab" id="novo">+ Novo</button>';
   render(html, 'Agenda');
   $('#novo').onclick = abrirMenuNovo;
+  ligarAvisoBackup(telaAgenda);
   const b = $('#ativar-avisos');
   if (b) b.onclick = async () => { await pedirPermissaoAvisos(); telaAgenda(); };
 }
@@ -825,8 +827,8 @@ async function pedirPermissaoAvisos() {
 
 async function mostrarAviso(titulo, corpo) {
   const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
-  if (reg) reg.showNotification(titulo, { body: corpo, icon: 'icon.svg' });
-  else new Notification(titulo, { body: corpo, icon: 'icon.svg' });
+  if (reg) reg.showNotification(titulo, { body: corpo, icon: 'icon-192.png', badge: 'icon-192.png' });
+  else new Notification(titulo, { body: corpo, icon: 'icon-192.png' });
 }
 
 // Avisa 1 dia e 2 horas antes (enquanto o app estiver aberto ou em segundo plano). Todos os familiares ativos.
@@ -859,18 +861,71 @@ function baixarArquivo(conteudo, nome, tipo) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-async function exportarBackup() {
+// ---------- Backup com intervalo (lembrete) ----------
+// Um site não pode gravar arquivos sozinho no celular; por isso, quando vence o prazo escolhido,
+// a Agenda mostra um aviso e o backup é feito com um toque (salvar no aparelho ou enviar ao Drive).
+const INTERVALOS_BACKUP = new Map([['1', 'Todo dia'], ['3', 'A cada 3 dias'], ['7', 'Toda semana'], ['0', 'Desligado']]);
+const chaveLocal = (k) => (MODO_TESTE ? 'teste:' : '') + k;
+const lerLocal = (k, padrao = null) => { try { return localStorage.getItem(chaveLocal(k)) ?? padrao; } catch { return padrao; } };
+const gravarLocal = (k, v) => { try { localStorage.setItem(chaveLocal(k), v); } catch { } };
+const intervaloBackup = () => Number(lerLocal('intervaloBackup', '1'));
+const podeCompartilhar = () => !!navigator.canShare?.({ files: [new File(['x'], 'x.json', { type: 'application/json' })] });
+
+async function backupVencido() {
+  const dias = intervaloBackup();
+  if (!dias) return false;
+  if (Number(lerLocal('backupAdiadoAte', '0')) > Date.now()) return false;
+  const [cs, es] = await Promise.all([DB.todos('consultas'), DB.todos('exames')]);
+  if (!cs.length && !es.length && FAMILIA.lista.length < 2) return false; // nada para guardar ainda
+  const ultimo = lerLocal('ultimoBackup');
+  return !ultimo || Date.now() - new Date(ultimo).getTime() >= dias * 86400000 - 3600000;
+}
+
+// modo: 'baixar' (salva no aparelho) ou 'enviar' (Drive, WhatsApp, e-mail…)
+async function exportarBackup(modo = 'baixar') {
   try {
     const pacote = await montarBackup();
-    baixarArquivo(JSON.stringify(pacote), `backup-diario-saude-${hoje()}.json`, 'application/json');
-    try { localStorage.setItem((MODO_TESTE ? 'teste:' : '') + 'ultimoBackup', new Date().toISOString()); } catch { }
-    toast('Backup gerado ✓ Guarde o arquivo em local seguro.');
+    const nome = `backup-diario-saude-${hoje()}.json`;
+    const json = JSON.stringify(pacote);
+    if (modo === 'enviar' && podeCompartilhar()) {
+      try {
+        await navigator.share({ files: [new File([json], nome, { type: 'application/json' })], title: 'Backup do Diário de Saúde' });
+      } catch (err) {
+        if (err.name === 'AbortError') return false; // a pessoa desistiu de enviar
+        baixarArquivo(json, nome, 'application/json'); // não deu para enviar: salva no aparelho
+      }
+    } else {
+      baixarArquivo(json, nome, 'application/json');
+    }
+    gravarLocal('ultimoBackup', new Date().toISOString());
+    gravarLocal('backupAdiadoAte', '0');
+    toast('Backup feito ✓ Guarde o arquivo em local seguro (ele contém dados de saúde).');
     return true;
   } catch (err) {
     registrarErro('backup', err);
     toast('Não foi possível gerar o backup: ' + err.message);
     return false;
   }
+}
+
+function avisoBackup() {
+  const ultimo = lerLocal('ultimoBackup');
+  return `<div class="aviso aviso-backup">
+    <span>💾 <strong>Hora do backup.</strong> Último: ${ultimo ? new Date(ultimo).toLocaleDateString('pt-BR') : 'nunca'}.</span>
+    <div class="acoes">
+      ${podeCompartilhar() ? '<button class="btn pequeno primario" data-backup="enviar">☁️ Enviar ao Drive…</button>' : ''}
+      <button class="btn pequeno ${podeCompartilhar() ? '' : 'primario'}" data-backup="baixar">⬇️ Salvar no aparelho</button>
+      <button class="btn pequeno" data-backup="adiar">Amanhã</button>
+    </div></div>`;
+}
+function ligarAvisoBackup(recarregar) {
+  document.querySelectorAll('[data-backup]').forEach((b) => b.onclick = async () => {
+    if (b.dataset.backup === 'adiar') {
+      gravarLocal('backupAdiadoAte', String(Date.now() + 20 * 3600000));
+      toast('Ok, lembro amanhã.');
+    } else await exportarBackup(b.dataset.backup);
+    recarregar();
+  });
 }
 
 async function importarBackup(arquivo) {
@@ -904,8 +959,7 @@ async function telaMais() {
   const perm = 'Notification' in window ? Notification.permission : 'indisponivel';
   const txtPerm = { granted: '✅ Ativados', denied: '🚫 Bloqueados (libere nas configurações do navegador)', default: 'Desativados', indisponivel: 'Não suportado neste navegador' }[perm];
   const [nMedicos, copiaV2, arm] = await Promise.all([DB.todos('medicos').then((m) => m.length), DB.pegar('meta', 'copia-v2'), estadoArmazenamento()]);
-  let ultimo = null;
-  try { ultimo = localStorage.getItem((MODO_TESTE ? 'teste:' : '') + 'ultimoBackup'); } catch { }
+  const ultimo = lerLocal('ultimoBackup');
   render(`${MODO_TESTE ? '<div class="aviso">🧪 Modo de teste: banco separado, dados fictícios.</div>' : ''}
     <a class="card" href="#/familia"><div class="card-ic">👨‍👩‍👧</div>
       <div class="card-corpo"><strong>Família</strong><small>${FAMILIA.ativos.length} familiar(es) ativo(s) · cadastrar, editar, arquivar</small></div>
@@ -917,8 +971,15 @@ async function telaMais() {
       <p class="mudo">Os dados ficam <strong>somente neste aparelho</strong>. Se o navegador for limpo ou o celular trocado, eles se perdem.
         Faça backup com frequência e guarde o arquivo num local seguro (o arquivo contém dados de saúde).</p>
       <p>Último backup: <strong>${ultimo ? new Date(ultimo).toLocaleDateString('pt-BR') : 'nunca'}</strong></p>
-      <div class="acoes"><button class="btn primario" id="exportar">⬇️ Gerar backup</button>
-      <label class="btn">⬆️ Restaurar backup<input type="file" id="importar" accept="application/json,.json" hidden></label></div>
+      <label class="campo"><span>Lembrar de fazer backup</span><select id="intervalo-backup">
+        ${[...INTERVALOS_BACKUP].map(([v, t]) => `<option value="${v}" ${Number(v) === intervaloBackup() ? 'selected' : ''}>${t}</option>`).join('')}
+      </select></label>
+      <p class="mudo">Quando chegar a hora, a Agenda mostra um aviso para fazer o backup com um toque.</p>
+      <div class="acoes">
+        ${podeCompartilhar() ? '<button class="btn primario" id="enviar-backup">☁️ Enviar ao Drive…</button>' : ''}
+        <button class="btn ${podeCompartilhar() ? '' : 'primario'}" id="exportar">⬇️ Salvar no aparelho</button>
+        <label class="btn">⬆️ Restaurar backup<input type="file" id="importar" accept="application/json,.json" hidden></label></div>
+      ${podeCompartilhar() ? '<p class="mudo">“Enviar ao Drive” abre as opções do celular: escolha Google Drive para guardar fora do aparelho.</p>' : ''}
       <p class="mudo">O backup inclui familiares, médicos, consultas, exames, arquivos e todos os vínculos, com verificação de integridade.</p>
       ${copiaV2 ? `<p class="mudo">Há uma cópia de segurança dos registros de antes da atualização para a versão 3
         (${new Date(copiaV2.criadoEm).toLocaleDateString('pt-BR')}). <button class="btn pequeno" id="copia-v2">Baixar cópia</button></p>` : ''}</div>
@@ -932,7 +993,10 @@ async function telaMais() {
       ${perm === 'default' ? '<button class="btn primario" id="ativar">Ativar avisos</button>' : ''}
       <p class="mudo">Dica: para ter certeza de que será lembrado, use o botão "Lembrete no calendário" em cada consulta ou exame.</p></div>
     <div class="bloco"><h3>📱 Instalar no celular</h3>
-      <p class="mudo">Abra o app no navegador do celular e use "Adicionar à tela inicial" (Chrome: menu ⋮; iPhone: botão Compartilhar).</p></div>
+      ${matchMedia('(display-mode: standalone)').matches ? '<p>✅ O app já está instalado.</p>'
+        : `${pedidoInstalacao ? '<button class="btn primario" id="instalar">📲 Instalar o app</button>' : ''}
+          <p class="mudo">No Android (Chrome): menu ⋮ → "Instalar app" ou "Adicionar à tela inicial".
+          No iPhone (Safari): botão Compartilhar → "Adicionar à Tela de Início".</p>`}</div>
     <div class="bloco"><h3>🚧 Em breve</h3><ul class="mudo">
       <li>Backup protegido por senha (criptografado)</li>
       <li>Sincronização entre aparelhos</li>
@@ -947,10 +1011,24 @@ async function telaMais() {
     toast(ok ? 'Armazenamento protegido ✓' : 'O navegador não concedeu a proteção agora. Instalar o app costuma ajudar.');
     telaMais();
   };
+  const bi = $('#instalar');
+  if (bi) bi.onclick = async () => {
+    pedidoInstalacao.prompt();
+    const { outcome } = await pedidoInstalacao.userChoice;
+    pedidoInstalacao = null;
+    toast(outcome === 'accepted' ? 'App instalado ✓ Ele aparece na tela inicial.' : 'Instalação cancelada');
+    telaMais();
+  };
   const bc = $('#copia-v2');
   if (bc) bc.onclick = () => baixarArquivo(JSON.stringify({ app: 'diario-saude', versao: 2, ...copiaV2, anexos: [] }),
     `copia-antes-v3-${hoje()}.json`, 'application/json');
-  $('#exportar').onclick = exportarBackup;
+  $('#exportar').onclick = async () => { await exportarBackup('baixar'); telaMais(); };
+  const be = $('#enviar-backup');
+  if (be) be.onclick = async () => { await exportarBackup('enviar'); telaMais(); };
+  $('#intervalo-backup').onchange = (ev) => {
+    gravarLocal('intervaloBackup', ev.target.value);
+    toast(Number(ev.target.value) ? `Lembrete de backup: ${INTERVALOS_BACKUP.get(ev.target.value).toLowerCase()} ✓` : 'Lembrete de backup desligado');
+  };
   $('#importar').onchange = (ev) => ev.target.files[0] && importarBackup(ev.target.files[0]);
 }
 
@@ -1030,7 +1108,7 @@ async function iniciar() {
       <div class="acoes"><button class="btn primario" id="bk">⬇️ Gerar backup</button>
       <button class="btn" onclick="location.reload()">Tentar de novo</button></div>
       <p class="mudo">Detalhe técnico: ${esc(err.message)}</p></div>`, 'Erro');
-    $('#bk').onclick = exportarBackup;
+    $('#bk').onclick = () => exportarBackup('baixar');
     return;
   }
   await sincronizarMedicos().catch((e) => registrarErro('médicos', e));
@@ -1040,6 +1118,10 @@ async function iniciar() {
   setInterval(verificarLembretes, 5 * 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) verificarLembretes(); });
 }
+
+// Android/Chrome: guarda o pedido de instalação para oferecer o botão "Instalar o app" em Mais
+let pedidoInstalacao = null;
+window.addEventListener('beforeinstallprompt', (ev) => { ev.preventDefault(); pedidoInstalacao = ev; });
 
 $('#voltar').onclick = () => history.back();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });

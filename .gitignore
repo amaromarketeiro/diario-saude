@@ -8,3 +8,9 @@ backup-*.json
 *.png
 *.heic
 dados/
+
+# Exceção: ícones do próprio app (não são dados de saúde)
+!icon-192.png
+!icon-512.png
+!icon-maskable-512.png
+!apple-touch-icon.png

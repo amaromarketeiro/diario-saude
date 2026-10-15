@@ -273,6 +273,11 @@ button.fab { border: 0; font: inherit; font-weight: 700; cursor: pointer; }
 .j-docs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .j-doc { font-size: 12px; background: var(--prim-claro); border-radius: 999px; padding: 2px 8px; }
 
+.aviso { margin-bottom: 10px; }
+.aviso-backup { background: var(--alerta-claro); flex-direction: column; align-items: stretch; }
+.aviso-backup .acoes { margin: 0; }
+.aviso-backup .acoes .btn { flex: 1 1 auto; }
+
 /* ---------- Confirmação, arquivados e busca ---------- */
 .dialogo {
   position: relative; background: var(--cartao); color: var(--texto); border-radius: 18px; padding: 20px;
