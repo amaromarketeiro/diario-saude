@@ -291,6 +291,55 @@ button.fab { border: 0; font: inherit; font-weight: 700; cursor: pointer; }
 .aviso-backup .acoes { margin: 0; }
 .aviso-backup .acoes .btn { flex: 1 1 auto; }
 
+/* ---------- Resultados: itens, leitura do laudo e evolução ---------- */
+.itens-res { display: flex; flex-direction: column; }
+.item-res { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 0; border-top: 1px solid var(--borda); }
+.item-res:first-child { border-top: 0; }
+.ir-nome { font-weight: 600; }
+.ir-valor { text-align: right; white-space: nowrap; }
+.ir-valor strong { font-size: 17px; }
+.ir-valor .texto { white-space: normal; font-size: 14px; }
+.ir-extra { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ir-extra small { color: var(--mudo); }
+.ref-selo { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.ref-selo.acima, .ref-selo.abaixo { background: var(--alerta-claro); color: var(--alerta); }
+.ref-selo.dentro { background: var(--verde-claro); color: var(--verde); }
+.var { font-size: 12px; font-weight: 600; color: var(--mudo); }
+.duvida-selo { font-size: 11px; font-weight: 700; color: var(--alerta); white-space: nowrap; }
+.aviso-duvida { background: var(--alerta-claro); color: var(--alerta); padding: 8px 12px; border-radius: 10px; font-weight: 600; margin: 0 0 8px; }
+.linha-item { border: 1px solid var(--borda); border-radius: 12px; padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+.linha-item.com-duvida { border-color: var(--alerta); background: var(--alerta-claro); }
+.li-topo { display: flex; gap: 8px; }
+.li-nome { font-weight: 600; }
+.li-duvida { margin: 0; font-size: 13px; color: var(--alerta); font-weight: 600; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.li-campos { display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; }
+.li-campos label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--mudo); font-weight: 600; }
+.li-campos input { min-height: 40px; padding: 8px 10px; }
+.nao-entendidas { margin: 8px 0; padding-left: 18px; font-size: 13px; color: var(--mudo); }
+.nao-entendidas li { margin: 4px 0; overflow-wrap: anywhere; }
+.resumo-leitura p { margin: 0 0 6px; }
+.card.destaque { border-color: var(--prim); }
+.card.evo .card-corpo { gap: 2px; }
+.evo-selos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 2px; }
+.mini { width: 84px; height: 28px; flex: none; }
+.mini polyline { fill: none; stroke: var(--prim); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.mini circle { fill: var(--prim); }
+.grafico-bloco { padding: 12px 8px; }
+.grafico { width: 100%; height: auto; display: block; }
+.g-grade { stroke: var(--borda); stroke-width: 1; }
+.g-eixo { fill: var(--mudo); font-size: 10px; }
+.g-faixa { fill: var(--verde-claro); }
+.g-faixa-txt { fill: var(--verde); font-size: 10px; font-weight: 600; }
+.g-linha { fill: none; stroke: var(--prim); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.g-alvo { fill: transparent; cursor: pointer; }
+.g-marca { fill: var(--prim); stroke: var(--cartao); stroke-width: 2; }
+.g-marca.fora { fill: var(--alerta); }
+.g-ponto.ativo .g-marca { r: 7; }
+.g-ponto:focus { outline: none; }
+.g-ponto:focus-visible .g-marca { stroke: var(--texto); }
+.g-rotulo { fill: var(--texto); font-size: 12px; font-weight: 700; }
+#g-detalhe { text-align: center; margin: 6px 0 0; }
+
 /* ---------- Vínculo exame ↔ consulta ---------- */
 .linha-vinc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px !important; }
 .vinc { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--cinza-claro); color: var(--mudo); }

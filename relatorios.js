@@ -117,6 +117,9 @@ async function telaRelatorios(_, q = {}) {
     </div>
     ${porFamiliar}
     <h2 class="secao">Relatórios${filtroAtual() !== 'todos' ? ' de ' + esc(nomeFamiliar(filtroAtual())) : ''}</h2>
+    <a class="card destaque" href="#/evolucao${filtroAtual() !== 'todos' ? '?paciente=' + filtroAtual() : ''}"><div class="card-ic">📈</div>
+      <div class="card-corpo"><strong>Evolução dos resultados</strong><small>Glicose, colesterol, frequência cardíaca… subiu ou caiu? Tabela e gráficos por pessoa</small></div>
+      <span class="seta">›</span></a>
     ${relatorio('#/relatorios/medicos', '👩‍⚕️', 'Histórico por médico', 'Consultas e exames de cada médico')}
     ${relatorio('#/relatorios/especialidades', '🏥', 'Por especialidade', 'Quais áreas são mais acompanhadas')}
     ${relatorio('#/relatorios/exames', '🧪', 'Exames ao longo do tempo', 'Compare o mesmo exame da mesma pessoa')}

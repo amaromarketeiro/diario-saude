@@ -684,7 +684,7 @@ async function telaExame(id) {
   const e = await DB.pegar('exames', id);
   if (!e) return naoEncontrado();
   const anexos = await anexosDe('exame', id);
-  const todasConsultas = await DB.todos('consultas');
+  const [todasConsultas, todosExames] = await Promise.all([DB.todos('consultas'), DB.todos('exames')]);
   const origem = e.consultaId ? todasConsultas.find((c) => c.id === e.consultaId) : null;
   const retornos = todasConsultas.filter((c) => (c.retornoDe || []).includes(id) && c.status !== 'cancelada');
   const passo = PASSOS.indexOf(e.status);
@@ -773,6 +773,7 @@ async function telaExame(id) {
     ${blocoVinculo}
     <ol class="passos">${PASSOS.map((p, i) => `<li class="${i < passo || e.status === 'resultado' ? 'feito' : i === passo ? 'atual' : ''}">${NOME_PASSO[p]}</li>`).join('')}</ol>
     ${painel}
+    ${blocoItensExame(e, todosExames)}
     ${e.observacoes ? `<div class="bloco"><h3>Observações</h3><p class="texto">${esc(e.observacoes)}</p></div>` : ''}
     <div class="bloco"><h3>Arquivos (pedido e resultado)</h3>
       ${gradeAnexos(anexos)}
@@ -1246,6 +1247,9 @@ const ROTAS = [
   [/^#\/exames$/, telaExames],
   [/^#\/exame\/novo$/, (_, q) => telaFormExame(null, q)],
   [/^#\/exame\/(\w+)\/editar$/, (id) => telaFormExame(id)],
+  [/^#\/exame\/(\w+)\/itens$/, telaItensExame],
+  [/^#\/evolucao$/, telaEvolucao],
+  [/^#\/evolucao\/([^/]+)$/, telaEvolucaoItem],
   [/^#\/exame\/(\w+)$/, telaExame],
   [/^#\/familia$/, telaFamilia],
   [/^#\/familiar\/novo$/, () => telaFormFamiliar(null)],
@@ -1263,7 +1267,7 @@ const ROTAS = [
   [/^#\/relatorios\/linha$/, telaRelLinha],
   [/^#\/mais$/, telaMais],
 ];
-const ABA_DA_ROTA = { consulta: 'consultas', jornada: 'consultas', exame: 'exames', medico: 'mais', medicos: 'mais', familia: 'mais', familiar: 'mais' };
+const ABA_DA_ROTA = { consulta: 'consultas', jornada: 'consultas', exame: 'exames', evolucao: 'relatorios', medico: 'mais', medicos: 'mais', familia: 'mais', familiar: 'mais' };
 
 async function navegar() {
   const [caminho, busca] = (location.hash || '#/agenda').split('?');
