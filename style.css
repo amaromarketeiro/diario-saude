@@ -216,7 +216,6 @@ textarea { resize: vertical; }
 }
 .chip-fam.ativo { background: var(--prim); border-color: var(--prim); color: #fff; }
 @media (prefers-color-scheme: dark) { .chip-fam.ativo { color: #042f2e; } }
-.chip-fam.mais { padding: 6px 14px; font-size: 18px; }
 .avatar {
   --cor: var(--prim); flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
   background: var(--cor); color: #fff; font-weight: 700; font-size: 15px; letter-spacing: .02em;

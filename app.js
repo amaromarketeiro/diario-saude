@@ -131,6 +131,7 @@ function abrirMenuNovo() {
       <h3>O que você quer cadastrar?</h3>
       <a class="opcao" href="#/consulta/nova${p}" data-fechar><span>🩺</span><span><strong>Nova consulta</strong><small>Familiar, médico, data e hora</small></span></a>
       <a class="opcao" href="#/exame/novo${p}" data-fechar><span>🧪</span><span><strong>Novo exame</strong><small>Pedido de exame, com ou sem data</small></span></a>
+      <a class="opcao" href="#/familiar/novo" data-fechar><span>👨‍👩‍👧</span><span><strong>Novo familiar</strong><small>Cadastrar uma pessoa da família</small></span></a>
       <button class="btn" data-fechar>Cancelar</button>
     </div>`;
   m.hidden = false;

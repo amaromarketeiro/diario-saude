@@ -64,7 +64,6 @@ function seletorFamilia() {
     <button class="chip-fam ${atual === 'todos' ? 'ativo' : ''}" data-filtro="todos">👨‍👩‍👧 Todos</button>
     ${visiveis.map((f) => `<button class="chip-fam ${atual === f.id ? 'ativo' : ''}" data-filtro="${f.id}" title="${esc(f.nome)}">
       ${avatar(f, 'mini')}${esc(nomeExibicao(f))}${f.status === 'arquivado' ? ' (arquivado)' : ''}</button>`).join('')}
-    <a class="chip-fam mais" href="#/familiar/novo" aria-label="Cadastrar familiar">＋</a>
   </div>`;
 }
 function ligarSeletor() {
