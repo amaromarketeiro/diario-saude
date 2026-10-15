@@ -13,9 +13,9 @@
   </style>
   <!-- Banco exclusivo dos testes: nunca toca nos dados reais -->
   <script>window.DB_NOME_FORCADO = 'diario-saude-testes-auto';</script>
-  <script src="db.js?v=15"></script>
-  <script src="nucleo.js?v=15"></script>
-  <script src="resultados.js?v=15"></script>
+  <script src="db.js?v=16"></script>
+  <script src="nucleo.js?v=16"></script>
+  <script src="resultados.js?v=16"></script>
 </head>
 <body>
   <h1>Testes automáticos</h1>
@@ -253,6 +253,39 @@ Data de impressão: 10/10/2026`;
     const g = pontosDoGrafico(s);
     igual([g.pontos.map((p) => p.valor), g.foraDaUnidade], [[98, 112], 1], 'gráfico só na unidade mais usada');
     igual(Math.round(variacao(g.pontos).delta), 14, 'subiu 14');
+  });
+
+  // ---------- Dados de exemplo ----------
+  await teste('Dados de exemplo cobrem todas as etapas e situações, com dados consistentes', () => {
+    const d = gerarExemplos('2026-10-15');
+    const statusC = new Set(d.consultas.map((c) => c.status)), statusE = new Set(d.exames.map((e) => e.status));
+    verificar(['agendada', 'realizada'].every((s) => statusC.has(s)), 'status de consulta');
+    verificar(['solicitado', 'marcado', 'realizado', 'resultado'].every((s) => statusE.has(s)), 'todas as etapas do exame');
+    const tipos = new Set(calcularPendencias(d.consultas, d.exames, '2026-10-15').map((p) => p.tipo));
+    igual([...tipos].sort(), Object.keys(NOMES_PENDENCIA).sort(), 'gera todos os tipos de pendência');
+    verificar(d.consultas.some((c) => c.arquivado) && d.exames.some((e) => !e.consultaId), 'arquivado e solto');
+    verificar(d.consultas.some((c) => c.retornoDe.length && c.consultaOrigemId), 'retorno ligado');
+    const g = pontosDoGrafico(seriesDoPaciente(d.exames, d.familiares[0].id).glicose);
+    verificar(g.pontos.length === 3, 'três resultados de glicose para o gráfico');
+    verificar(d.exames.some((e) => e.itens?.some((i) => i.duvida)), 'item com dúvida');
+    verificar(!houveMudanca(converterDados(d).relatorio), 'exemplos já são consistentes (migração não altera nada)');
+    verificar([...d.familiares, ...d.medicos, ...d.consultas, ...d.exames].every((x) => x.exemplo), 'tudo marcado como exemplo');
+  });
+
+  await teste('IndexedDB: remover exemplos não toca nos dados reais', async () => {
+    await apagarBanco();
+    const real = criarFamiliar({ nome: 'Pessoa real', principal: true });
+    await DB.salvar('familiares', real);
+    await DB.salvar('consultas', { id: 'real1', pacienteId: real.id, status: 'agendada', data: '2026-11-01' });
+    const d = await criarExemplos(new Blob(['img'], { type: 'image/png' }));
+    verificar(await existemExemplos(), 'exemplos criados');
+    // registro real cadastrado por engano no familiar de exemplo
+    await DB.salvar('exames', { id: 'real2', pacienteId: d.familiares[0].id, nome: 'Exame real', status: 'solicitado' });
+    const r = await removerExemplos();
+    verificar(!(await existemExemplos()), 'exemplos removidos');
+    igual((await DB.todos('consultas')).map((c) => c.id), ['real1'], 'consulta real intacta');
+    igual((await DB.pegar('exames', 'real2')).pacienteId, real.id, 'registro real no exemplo foi para o principal');
+    igual([(await DB.todos('anexos')).length, (await DB.todos('medicos')).length, r.movidos], [0, 0, 1], 'anexos e médicos de exemplo removidos');
   });
 
   // ---------- Banco de dados real (IndexedDB) ----------

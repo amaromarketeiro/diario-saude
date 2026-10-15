@@ -397,6 +397,97 @@ async function restaurarDados(dados) {
   });
 }
 
+// ===================== Dados de exemplo (um registro em cada etapa) =====================
+// Cria um familiar fictício "Exemplo (teste)" com consultas, exames, resultados e retornos em todas as situações.
+// Todos os registros levam exemplo: true, para poderem ser removidos sem tocar nos dados reais.
+// imagem (opcional): Blob usado como foto de documento anexado.
+function gerarExemplos(hojeISO = hoje(), imagem = null) {
+  const dia = (n) => { const x = lerData(hojeISO); x.setDate(x.getDate() + n); return paraISO(x); };
+  const agora = Date.now();
+  const marca = { exemplo: true, criadoEm: agora, atualizadoEm: agora };
+  const id = () => 'ex' + novoId();
+  const fam = { ...criarFamiliar({ nome: 'Exemplo (teste)', apelido: 'Exemplo', vinculo: 'Outro', cor: '#7c3aed' }, agora), ...marca };
+  const P = fam.id;
+  const MED = { cli: ['Dra. Exemplo Clínica', 'Clínico geral', 'UBS Exemplo'], orto: ['Dr. Exemplo Ortopedista', 'Ortopedia', 'Policlínica Exemplo'],
+    card: ['Dra. Exemplo Cardiologista', 'Cardiologia', 'Hospital Exemplo'] };
+  const medicos = Object.values(MED).map(([nome, especialidade, local]) => ({ id: id(), nome, especialidade, local, registro: '', telefone: '', ...marca }));
+  const C = (m, o) => ({ id: id(), pacienteId: P, status: 'agendada', hora: '09:00', medico: MED[m][0], especialidade: MED[m][1], local: MED[m][2],
+    retornoDe: [], consultaOrigemId: null, ...marca, ...o });
+  const E = (o) => ({ id: id(), pacienteId: P, status: 'solicitado', consultaId: null, ...marca, ...o });
+  const it = (cod, valor, unidade, refMin = null, refMax = null, extra = {}) => ({ id: id(), cod, nome: ANALITO_NOME[cod] || cod, valor, texto: '', unidade, refMin, refMax, duvida: '', ...extra });
+  const ANALITO_NOME = { glicose: 'Glicose', colesterol_total: 'Colesterol total', hdl: 'HDL', triglicerideos: 'Triglicerídeos', hemoglobina: 'Hemoglobina',
+    creatinina: 'Creatinina', ecg_fc: 'Frequência cardíaca', ecg_pr: 'Intervalo PR', ecg_qrs: 'Duração do QRS', ecg_qtc: 'QTc', ecg_ritmo: 'Ritmo', conclusao: 'Conclusão do laudo' };
+  const sangue = (g, col, hdl, tg, hb, extra = []) => [it('glicose', g, 'mg/dL', 70, 99), it('colesterol_total', col, 'mg/dL', null, 190, { refExclusiva: true }),
+    it('hdl', hdl, 'mg/dL', 40, null, { refExclusiva: true }), it('triglicerideos', tg, 'mg/dL', null, 150, { refExclusiva: true }), it('hemoglobina', hb, 'g/dL', 13.5, 17.5), ...extra];
+  const res = (dataExame, extra = {}) => ({ status: 'resultado', dataExame, horaExame: '07:30', localExame: 'Laboratório Exemplo', dataRecebido: dataExame, ...extra });
+
+  // Jornada 1 (check-up antigo): consulta → sangue + eletro → retorno realizado
+  const c1 = C('cli', { data: dia(-200), status: 'realizada', assunto: 'Check-up anual (exemplo)', anotacoes: 'Pediu exames de sangue e eletrocardiograma.' });
+  const s1 = E({ nome: 'Exame de sangue', consultaId: c1.id, medico: MED.cli[0], especialidade: MED.cli[1], dataSolicitacao: c1.data, ...res(dia(-190)), itens: sangue(92, 228, 41, 205, 14.1) });
+  const ecg = E({ nome: 'Eletrocardiograma', consultaId: c1.id, medico: MED.cli[0], especialidade: MED.cli[1], dataSolicitacao: c1.data, ...res(dia(-185)),
+    itens: [it('ecg_fc', 74, 'bpm'), it('ecg_pr', 158, 'ms'), it('ecg_qrs', 92, 'ms'), it('ecg_qtc', 418, 'ms'), { ...it('ecg_ritmo', null, ''), texto: 'Sinusal (exemplo)' }] });
+  const r1 = C('cli', { data: dia(-175), status: 'realizada', consultaOrigemId: c1.id, retornoDe: [s1.id, ecg.id], assunto: 'Retorno: mostrar resultados (exemplo)' });
+  // Jornada 2: consulta → sangue → retorno realizado
+  const c2 = C('cli', { data: dia(-110), status: 'realizada', assunto: 'Acompanhamento do colesterol (exemplo)' });
+  const s2 = E({ nome: 'Exame de sangue', consultaId: c2.id, medico: MED.cli[0], especialidade: MED.cli[1], dataSolicitacao: c2.data, ...res(dia(-100)), itens: sangue(99, 214, 44, 178, 13.8) });
+  const r2 = C('cli', { data: dia(-90), status: 'realizada', consultaOrigemId: c2.id, retornoDe: [s2.id] });
+  // Jornada 3 (em andamento): consulta com vários exames em etapas diferentes + retorno pedido e ainda não agendado
+  const c3 = C('cli', { data: dia(-25), status: 'realizada', retornoNecessario: true, prazoRetorno: dia(30), assunto: 'Dor no joelho e exames de rotina (exemplo)' });
+  const pedido = (nome, o = {}) => E({ nome, consultaId: c3.id, medico: MED.cli[0], especialidade: MED.cli[1], dataSolicitacao: c3.data, ...o });
+  const s3 = pedido('Exame de sangue', { ...res(dia(-8)), itens: sangue(106, 201, 47, 152, 13.6, [it('creatinina', 1.1, 'mg/dL', 0.7, 1.3, { duvida: 'Exemplo de item marcado para conferir com o laudo.' })]) });
+  const rx = pedido('Raio-X do joelho', { status: 'realizado', dataExame: dia(-4), localExame: 'Clínica de Imagem Exemplo', dataResultado: dia(5), horaResultado: '14:00', localResultado: 'Clínica de Imagem Exemplo' });
+  const us = pedido('Ultrassom de abdome', { status: 'marcado', dataExame: dia(12), horaExame: '10:00', localExame: 'Clínica de Imagem Exemplo', observacoes: 'Jejum de 8 horas (exemplo)' });
+  const eco = pedido('Ecocardiograma', { status: 'marcado', dataExame: dia(-3), horaExame: '08:00', localExame: 'Hospital Exemplo' });
+  const urina = pedido('Urina tipo 1');
+  // Jornada 4 (especialista): ortopedista → ressonância → retorno agendado levando o resultado
+  const c4 = C('orto', { data: dia(-60), status: 'realizada', assunto: 'Encaminhado pela clínica (exemplo)' });
+  const rm = E({ nome: 'Ressonância do joelho', consultaId: c4.id, medico: MED.orto[0], especialidade: MED.orto[1], dataSolicitacao: c4.data, ...res(dia(-40), { localExame: 'Clínica de Imagem Exemplo' }),
+    itens: [{ ...it('conclusao', null, ''), texto: 'Texto de exemplo: alteração no menisco medial.' }] });
+  const r4 = C('orto', { data: dia(10), hora: '15:30', consultaOrigemId: c4.id, retornoDe: [rm.id], assunto: 'Retorno: mostrar resultado de Ressonância do joelho' });
+  // Outras situações
+  const futura = C('card', { data: dia(3), hora: '11:00', assunto: 'Avaliação cardiológica (exemplo)' });
+  const passada = C('cli', { data: dia(-2), hora: '08:30', assunto: 'Consulta que já passou e não foi registrada (exemplo)' });
+  const arquivada = C('cli', { data: dia(-300), status: 'realizada', arquivado: true, arquivadoEm: agora, assunto: 'Consulta antiga arquivada (exemplo)' });
+  const solto = E({ nome: 'Glicemia de jejum', dataSolicitacao: dia(-6), observacoes: 'Pedido cadastrado sem a consulta (exemplo de exame solto).' });
+
+  const anexos = imagem ? [
+    { id: id(), tipoDono: 'exame', idDono: rx.id, tipoDoc: 'pedido', nome: 'pedido-exemplo.png', mime: imagem.type || 'image/png', blob: imagem, ...marca },
+    { id: id(), tipoDono: 'exame', idDono: s3.id, tipoDoc: 'resultado', nome: 'laudo-exemplo.png', mime: imagem.type || 'image/png', blob: imagem, ...marca },
+    { id: id(), tipoDono: 'consulta', idDono: c3.id, tipoDoc: 'receita', nome: 'receita-exemplo.png', mime: imagem.type || 'image/png', blob: imagem, ...marca },
+  ] : [];
+  return { familiares: [fam], medicos, anexos,
+    consultas: [c1, r1, c2, r2, c3, c4, r4, futura, passada, arquivada],
+    exames: [s1, ecg, s2, s3, rx, us, eco, urina, rm, solto] };
+}
+
+async function existemExemplos() {
+  return (await DB.todos('familiares')).some((f) => f.exemplo);
+}
+
+async function criarExemplos(imagem) {
+  const d = gerarExemplos(hoje(), imagem);
+  await DB.lote(TABELAS, (s) => { for (const t of TABELAS) for (const x of d[t] || []) s[t].put(x); });
+  return d;
+}
+
+// Remove só o que é exemplo. Se houver registros reais cadastrados no familiar de exemplo, passam ao perfil principal.
+async function removerExemplos() {
+  const dados = Object.fromEntries(await Promise.all(TABELAS.map(async (t) => [t, await DB.todos(t)])));
+  const famEx = new Set(dados.familiares.filter((f) => f.exemplo).map((f) => f.id));
+  const principal = dados.familiares.find((f) => f.principal && !f.exemplo);
+  const idsEx = new Set([...dados.consultas, ...dados.exames].filter((x) => x.exemplo).map((x) => x.id));
+  const reais = { consultas: dados.consultas.filter((x) => !x.exemplo && famEx.has(x.pacienteId)),
+    exames: dados.exames.filter((x) => !x.exemplo && famEx.has(x.pacienteId)) };
+  let removidos = 0;
+  await DB.lote(TABELAS, (s) => {
+    for (const t of TABELAS) for (const x of dados[t]) {
+      if (x.exemplo || (t === 'anexos' && idsEx.has(x.idDono))) { s[t].delete(x.id); removidos++; }
+    }
+    for (const t of ['consultas', 'exames']) for (const x of reais[t]) s[t].put({ ...x, pacienteId: principal?.id, atualizadoEm: Date.now() });
+  });
+  return { removidos, movidos: reais.consultas.length + reais.exames.length };
+}
+
 // ===================== Armazenamento persistente =====================
 async function estadoArmazenamento() {
   const st = navigator.storage;

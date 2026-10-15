@@ -328,6 +328,9 @@ async function telaAgenda() {
   const pendencias = calcularPendencias(doFiltro(cs), doFiltro(es)).filter((p) => p.atencao);
   let html = seletorFamilia();
 
+  if (FAMILIA.lista.some((f) => f.exemplo)) {
+    html += '<div class="aviso aviso-exemplo"><span>🧪 Há dados de exemplo (familiar “Exemplo”).</span><a class="btn pequeno" href="#/mais">Apagar em Mais</a></div>';
+  }
   if (await backupVencido()) html += avisoBackup();
   if (FAMILIA.principal?.nome === 'Eu') {
     html += `<div class="aviso">👤 Personalize o perfil principal e cadastre seus familiares.
@@ -1054,8 +1057,9 @@ async function backupVencido() {
   const dias = intervaloBackup();
   if (!dias) return false;
   if (Number(lerLocal('backupAdiadoAte', '0')) > Date.now()) return false;
-  const [cs, es] = await Promise.all([DB.todos('consultas'), DB.todos('exames')]);
-  if (!cs.length && !es.length && FAMILIA.lista.length < 2) return false; // nada para guardar ainda
+  const reais = (l) => l.filter((x) => !x.exemplo);
+  const [cs, es] = await Promise.all([DB.todos('consultas').then(reais), DB.todos('exames').then(reais)]);
+  if (!cs.length && !es.length && reais(FAMILIA.lista).length < 2) return false; // nada real para guardar ainda
   const ultimo = lerLocal('ultimoBackup');
   return !ultimo || Date.now() - new Date(ultimo).getTime() >= dias * 86400000 - 3600000;
 }
@@ -1150,6 +1154,7 @@ async function telaMais() {
   const txtPerm = { granted: '✅ Ativados', denied: '🚫 Bloqueados (libere nas configurações do navegador)', default: 'Desativados', indisponivel: 'Não suportado neste navegador' }[perm];
   const [nMedicos, copiaV2, arm] = await Promise.all([DB.todos('medicos').then((m) => m.length), DB.pegar('meta', 'copia-v2'), estadoArmazenamento()]);
   const ultimo = lerLocal('ultimoBackup');
+  const temExemplos = await existemExemplos();
   render(`${MODO_TESTE ? '<div class="aviso">🧪 Modo de teste: banco separado, dados fictícios.</div>' : ''}
     <a class="card" href="#/familia"><div class="card-ic">👨‍👩‍👧</div>
       <div class="card-corpo"><strong>Família</strong><small>${FAMILIA.ativos.length} familiar(es) ativo(s) · cadastrar, editar, arquivar</small></div>
@@ -1157,6 +1162,14 @@ async function telaMais() {
     <a class="card" href="#/medicos"><div class="card-ic">👩‍⚕️</div>
       <div class="card-corpo"><strong>Médicos</strong><small>${nMedicos} cadastrado(s) · nome, especialidade e registro</small></div>
       <span class="seta">›</span></a>
+    <div class="bloco"><h3>🧪 Dados de exemplo</h3>
+      ${temExemplos
+        ? `<p>O familiar <strong>“Exemplo (teste)”</strong> tem registros fictícios em todas as etapas: consultas, exames, resultados com gráfico, retornos e pendências.</p>
+           <button class="btn perigo" id="remover-exemplos">🗑️ Remover exemplos</button>
+           <p class="mudo">Remove só os registros de exemplo. Seus dados reais não são tocados.</p>`
+        : `<p class="mudo">Cria um familiar fictício “Exemplo (teste)” com um registro em cada etapa (consulta agendada, realizada, exame solto,
+            marcado, aguardando resultado, resultado com gráfico, retorno…), para ver como tudo funciona. Depois é só remover.</p>
+           <button class="btn" id="criar-exemplos">🧪 Criar dados de exemplo</button>`}</div>
     <div class="bloco"><h3>💾 Backup</h3>
       <p class="mudo">Os dados ficam <strong>somente neste aparelho</strong>. Se o navegador for limpo ou o celular trocado, eles se perdem.
         Faça backup com frequência e guarde o arquivo num local seguro (o arquivo contém dados de saúde).</p>
@@ -1208,6 +1221,24 @@ async function telaMais() {
   if (bp) bp.onclick = async () => {
     const ok = await navigator.storage.persist?.();
     toast(ok ? 'Armazenamento protegido ✓' : 'O navegador não concedeu a proteção agora. Instalar o app costuma ajudar.');
+    telaMais();
+  };
+  const bCriarEx = $('#criar-exemplos');
+  if (bCriarEx) bCriarEx.onclick = async () => {
+    let imagem = null;
+    try { imagem = await (await fetch('icon-192.png')).blob(); } catch { }
+    const d = await criarExemplos(imagem);
+    toast(`🧪 ${d.consultas.length} consultas e ${d.exames.length} exames de exemplo criados ✓`);
+    definirFiltro(d.familiares[0].id);
+    location.hash = '#/agenda';
+  };
+  const bRemEx = $('#remover-exemplos');
+  if (bRemEx) bRemEx.onclick = async () => {
+    if (!(await confirmar('Todos os registros do familiar “Exemplo (teste)” serão apagados. Seus dados reais não são tocados.',
+      { titulo: 'Remover dados de exemplo?', sim: '🗑️ Remover', perigo: true }))) return;
+    const r = await removerExemplos();
+    definirFiltro('todos');
+    toast(`Exemplos removidos ✓${r.movidos ? ` (${r.movidos} registro(s) seus passaram ao perfil principal)` : ''}`);
     telaMais();
   };
   const bi = $('#instalar');
