@@ -262,7 +262,9 @@ async function telaAgenda() {
       <button class="btn pequeno" id="ativar-avisos">Ativar avisos</button></div>`;
   }
   if (!proximos.length && !pendencias.length) {
-    html += `<div class="vazio"><div class="vazio-ic">🗓️</div><h2>Nada agendado${filtroAtual() !== 'todos' ? ' para ' + esc(nomeFamiliar(filtroAtual())) : ''}</h2>
+    const agora = new Date();
+    html += `<div class="vazio"><div class="cal-hoje cal-grande" aria-hidden="true">
+      <b>${agora.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase()}</b><i>${agora.getDate()}</i></div><h2>Nada agendado${filtroAtual() !== 'todos' ? ' para ' + esc(nomeFamiliar(filtroAtual())) : ''}</h2>
       <p>Toque em “+ Novo” para cadastrar uma consulta ou um exame.</p></div>`;
   }
   if (pendencias.length) {
@@ -1156,5 +1158,17 @@ window.addEventListener('beforeinstallprompt', (ev) => { ev.preventDefault(); pe
 
 $('#voltar').onclick = () => history.back();
 $('#versao').textContent = 'v' + VERSAO_APP;
+
+// Ícone da aba Agenda com o mês e o dia de hoje (atualiza na virada do dia e ao voltar ao app)
+function atualizarCalendarioHoje() {
+  const d = new Date();
+  $('#cal-hoje b').textContent = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase();
+  $('#cal-hoje i').textContent = d.getDate();
+  const meiaNoite = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 5);
+  clearTimeout(atualizarCalendarioHoje.timer);
+  atualizarCalendarioHoje.timer = setTimeout(atualizarCalendarioHoje, meiaNoite - d);
+}
+atualizarCalendarioHoje();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarCalendarioHoje(); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 iniciar();
