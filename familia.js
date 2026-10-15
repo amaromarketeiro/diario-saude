@@ -26,6 +26,14 @@ function doFiltro(lista, filtro = filtroAtual()) {
 }
 
 const nomeCurto = (f) => (f ? f.apelido || f.nome : '—');
+// Nome para botões e etiquetas: apelido, ou primeiro nome (com o segundo, se houver outro familiar com o mesmo primeiro nome)
+function nomeExibicao(f) {
+  if (!f) return '—';
+  if (f.apelido) return f.apelido;
+  const partes = (f.nome || '').trim().split(/\s+/);
+  const repetido = FAMILIA.lista.some((x) => x.id !== f.id && !x.apelido && (x.nome || '').trim().split(/\s+/)[0] === partes[0]);
+  return repetido ? partes.slice(0, 2).join(' ') : partes[0];
+}
 const nomeFamiliar = (id) => nomeCurto(FAMILIA.porId.get(id));
 const mostrarNomes = () => filtroAtual() === 'todos' && FAMILIA.lista.length > 1;
 const iniciais = (f) => (f.apelido || f.nome || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
@@ -36,7 +44,7 @@ function avatar(f, classe = '') {
 function tagFamiliar(id, sempre = false) {
   if (!sempre && !mostrarNomes()) return '';
   const f = FAMILIA.porId.get(id);
-  return f ? `<span class="tag-fam" style="--cor:${esc(f.cor)}">${esc(nomeCurto(f))}</span>` : '';
+  return f ? `<span class="tag-fam" style="--cor:${esc(f.cor)}" title="${esc(f.nome)}">${esc(nomeExibicao(f))}</span>` : '';
 }
 
 function idade(nascimento) {
@@ -54,8 +62,8 @@ function seletorFamilia() {
   if (atual !== 'todos' && !visiveis.some((f) => f.id === atual)) visiveis.push(FAMILIA.porId.get(atual));
   return `<div class="seletor-fam" role="group" aria-label="Filtrar por familiar">
     <button class="chip-fam ${atual === 'todos' ? 'ativo' : ''}" data-filtro="todos">👨‍👩‍👧 Todos</button>
-    ${visiveis.map((f) => `<button class="chip-fam ${atual === f.id ? 'ativo' : ''}" data-filtro="${f.id}">
-      ${avatar(f, 'mini')}${esc(nomeCurto(f))}${f.status === 'arquivado' ? ' (arquivado)' : ''}</button>`).join('')}
+    ${visiveis.map((f) => `<button class="chip-fam ${atual === f.id ? 'ativo' : ''}" data-filtro="${f.id}" title="${esc(f.nome)}">
+      ${avatar(f, 'mini')}${esc(nomeExibicao(f))}${f.status === 'arquivado' ? ' (arquivado)' : ''}</button>`).join('')}
     <a class="chip-fam mais" href="#/familiar/novo" aria-label="Cadastrar familiar">＋</a>
   </div>`;
 }

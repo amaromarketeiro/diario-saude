@@ -67,7 +67,7 @@ main { max-width: 640px; margin: 0 auto; padding: 16px; }
 .card.resultado .card-ic { background: var(--roxo-claro); }
 .card.atrasado { border-color: var(--alerta); background: var(--alerta-claro); }
 .card-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.card-corpo strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-corpo strong { overflow-wrap: anywhere; }
 .card-corpo small { color: var(--mudo); }
 .seta { color: var(--mudo); font-size: 22px; }
 
@@ -208,7 +208,7 @@ textarea { resize: vertical; }
 }
 
 /* ---------- Família (v3) ---------- */
-.seletor-fam { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; margin-bottom: 4px; scrollbar-width: none; }
+.seletor-fam { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0 10px; margin-bottom: 4px; }
 .chip-fam {
   flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 14px 6px 8px;
   border-radius: 999px; border: 1px solid var(--borda); background: var(--cartao); color: var(--texto);
