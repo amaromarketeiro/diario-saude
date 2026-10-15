@@ -275,6 +275,7 @@ async function telaAgenda() {
   render(html, 'Agenda');
   $('#novo').onclick = abrirMenuNovo;
   ligarAvisoBackup(telaAgenda);
+  if ($('[data-backup="enviar"]')) prepararBackupAntecipado();
   const b = $('#ativar-avisos');
   if (b) b.onclick = async () => { await pedirPermissaoAvisos(); telaAgenda(); };
 }
@@ -869,7 +870,10 @@ const chaveLocal = (k) => (MODO_TESTE ? 'teste:' : '') + k;
 const lerLocal = (k, padrao = null) => { try { return localStorage.getItem(chaveLocal(k)) ?? padrao; } catch { return padrao; } };
 const gravarLocal = (k, v) => { try { localStorage.setItem(chaveLocal(k), v); } catch { } };
 const intervaloBackup = () => Number(lerLocal('intervaloBackup', '1'));
-const podeCompartilhar = () => !!navigator.canShare?.({ files: [new File(['x'], 'x.json', { type: 'application/json' })] });
+// O Chrome do Android só compartilha alguns tipos de arquivo (imagens, PDF, texto…) — .json não está na lista.
+// Por isso o backup é enviado como .txt (o conteúdo é o mesmo JSON; a restauração aceita os dois).
+const arquivoParaEnviar = (conteudo, nome) => new File([conteudo], nome.replace(/\.json$/, '.txt'), { type: 'text/plain' });
+const podeCompartilhar = () => !!navigator.canShare?.({ files: [arquivoParaEnviar('x', 'teste.json')] });
 
 async function backupVencido() {
   const dias = intervaloBackup();
@@ -881,25 +885,36 @@ async function backupVencido() {
   return !ultimo || Date.now() - new Date(ultimo).getTime() >= dias * 86400000 - 3600000;
 }
 
+// O Android só abre o "Compartilhar" logo após o toque. Por isso o backup é montado ANTES,
+// quando a tela com o botão aparece; no toque, ele já está pronto.
+let backupPreparado = null;
+function prepararBackupAntecipado() {
+  backupPreparado = montarBackup().then((p) => JSON.stringify(p)).catch(() => null);
+}
+
 // modo: 'baixar' (salva no aparelho) ou 'enviar' (Drive, WhatsApp, e-mail…)
 async function exportarBackup(modo = 'baixar') {
   try {
-    const pacote = await montarBackup();
+    const json = (backupPreparado && (await backupPreparado)) || JSON.stringify(await montarBackup());
+    backupPreparado = null;
     const nome = `backup-diario-saude-${hoje()}.json`;
-    const json = JSON.stringify(pacote);
+    let mensagem = '📥 Backup salvo na pasta Downloads do aparelho.' + (podeCompartilhar() ? ' Para guardar no Drive, use “☁️ Enviar ao Drive”.' : '');
     if (modo === 'enviar' && podeCompartilhar()) {
       try {
-        await navigator.share({ files: [new File([json], nome, { type: 'application/json' })], title: 'Backup do Diário de Saúde' });
+        await navigator.share({ files: [arquivoParaEnviar(json, nome)], title: 'Backup do Diário de Saúde' });
+        mensagem = '☁️ Backup enviado ✓ Confira no Drive o arquivo ' + nome.replace('.json', '.txt');
       } catch (err) {
-        if (err.name === 'AbortError') return false; // a pessoa desistiu de enviar
-        baixarArquivo(json, nome, 'application/json'); // não deu para enviar: salva no aparelho
+        if (err.name === 'AbortError') { prepararBackupAntecipado(); return false; } // desistiu de enviar
+        baixarArquivo(json, nome, 'application/json');
+        await avisar('Não foi possível abrir o envio agora, então o backup foi salvo na pasta Downloads do aparelho. Você pode enviá-lo ao Drive pelo app do Google Drive (+ → Fazer upload).', 'Backup salvo no aparelho');
+        mensagem = '';
       }
     } else {
       baixarArquivo(json, nome, 'application/json');
     }
     gravarLocal('ultimoBackup', new Date().toISOString());
     gravarLocal('backupAdiadoAte', '0');
-    toast('Backup feito ✓ Guarde o arquivo em local seguro (ele contém dados de saúde).');
+    if (mensagem) toast(mensagem);
     return true;
   } catch (err) {
     registrarErro('backup', err);
@@ -978,7 +993,7 @@ async function telaMais() {
       <div class="acoes">
         ${podeCompartilhar() ? '<button class="btn primario" id="enviar-backup">☁️ Enviar ao Drive…</button>' : ''}
         <button class="btn ${podeCompartilhar() ? '' : 'primario'}" id="exportar">⬇️ Salvar no aparelho</button>
-        <label class="btn">⬆️ Restaurar backup<input type="file" id="importar" accept="application/json,.json" hidden></label></div>
+        <label class="btn">⬆️ Restaurar backup<input type="file" id="importar" accept="application/json,.json,text/plain,.txt" hidden></label></div>
       ${podeCompartilhar() ? '<p class="mudo">“Enviar ao Drive” abre as opções do celular: escolha Google Drive para guardar fora do aparelho.</p>' : ''}
       <p class="mudo">O backup inclui familiares, médicos, consultas, exames, arquivos e todos os vínculos, com verificação de integridade.</p>
       ${copiaV2 ? `<p class="mudo">Há uma cópia de segurança dos registros de antes da atualização para a versão 3
@@ -1022,6 +1037,7 @@ async function telaMais() {
   const bc = $('#copia-v2');
   if (bc) bc.onclick = () => baixarArquivo(JSON.stringify({ app: 'diario-saude', versao: 2, ...copiaV2, anexos: [] }),
     `copia-antes-v3-${hoje()}.json`, 'application/json');
+  if (podeCompartilhar()) prepararBackupAntecipado();
   $('#exportar').onclick = async () => { await exportarBackup('baixar'); telaMais(); };
   const be = $('#enviar-backup');
   if (be) be.onclick = async () => { await exportarBackup('enviar'); telaMais(); };
