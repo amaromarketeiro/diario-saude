@@ -1,9 +1,9 @@
 // Service worker: permite abrir o app sem internet e mostrar avisos.
 // Ao atualizar o app, aumente o número da versão aqui e o "v=" no index.html.
-const VERSAO = 'v13';
+const VERSAO = 'v14';
 const CACHE = 'diario-saude-' + VERSAO;
-const ARQUIVOS = ['./', 'index.html', 'style.css?v=13', 'db.js?v=13', 'nucleo.js?v=13', 'familia.js?v=13',
-  'medicos.js?v=13', 'relatorios.js?v=13', 'app.js?v=13', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png',
+const ARQUIVOS = ['./', 'index.html', 'style.css?v=14', 'db.js?v=14', 'nucleo.js?v=14', 'familia.js?v=14',
+  'medicos.js?v=14', 'relatorios.js?v=14', 'app.js?v=14', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png',
   'icon-maskable-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

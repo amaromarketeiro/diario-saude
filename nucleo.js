@@ -213,6 +213,11 @@ function calcularPendencias(cs, es, h = hoje()) {
     } else if (e.status === 'resultado' && !examesComRetorno.has(e.id) && !e.resultadoApresentado) {
       p.push(item('resultado_nao_apresentado', e, { data: e.dataRecebido || e.dataExame, link, icone: '📄', titulo, texto: 'Resultado ainda não mostrado ao médico' }));
     }
+    // Organização (não urgente): exame cadastrado sem a consulta que o pediu
+    if (!e.consultaId) {
+      p.push(item('exame_sem_consulta', e, { data: e.dataSolicitacao, link, icone: '🧩', titulo, atencao: false,
+        texto: 'Solto: associe à consulta que pediu' }));
+    }
   }
   return p.sort((a, b) => (a.data || '').localeCompare(b.data || ''));
 }
@@ -224,7 +229,20 @@ const NOMES_PENDENCIA = {
   aguardando_resultado: 'Exames aguardando resultado',
   resultado_nao_apresentado: 'Resultados não mostrados ao médico',
   retorno_nao_agendado: 'Retornos pedidos e não agendados',
+  exame_sem_consulta: 'Exames soltos (sem consulta associada)',
 };
+
+// Associa um exame já cadastrado à consulta que o pediu. A consulta define quem pediu:
+// o médico/especialidade dela prevalecem (os do exame só ficam se a consulta não tiver),
+// e a data da consulta vira a data da solicitação. Retorna { exame } ou { erro }.
+function associarExame(e, consulta, cs) {
+  if (!consulta) return { erro: 'Consulta não encontrada.' };
+  const novo = { ...e, consultaId: consulta.id,
+    medico: consulta.medico || e.medico || '', especialidade: consulta.especialidade || e.especialidade || '',
+    dataSolicitacao: consulta.data || e.dataSolicitacao };
+  const erro = validarExame(novo, cs);
+  return erro ? { erro } : { exame: novo };
+}
 
 // ===================== Retornos =====================
 // Monta os dados iniciais de uma consulta de retorno. Junta os exames da mesma consulta de origem

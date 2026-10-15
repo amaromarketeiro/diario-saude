@@ -13,8 +13,8 @@
   </style>
   <!-- Banco exclusivo dos testes: nunca toca nos dados reais -->
   <script>window.DB_NOME_FORCADO = 'diario-saude-testes-auto';</script>
-  <script src="db.js?v=13"></script>
-  <script src="nucleo.js?v=13"></script>
+  <script src="db.js?v=14"></script>
+  <script src="nucleo.js?v=14"></script>
 </head>
 <body>
   <h1>Testes automáticos</h1>
@@ -112,8 +112,8 @@ const v2 = () => ({
       { id: 'e4', pacienteId: B, status: 'resultado' },
       { id: 'e5', pacienteId: B, status: 'resultado', resultadoApresentado: true },
     ];
-    const p = calcularPendencias(cs, es, h);
-    const por = Object.fromEntries(p.map((x) => [x.tipo + ':' + x.id, x.pacienteId]).sort((a, b) => a[0].localeCompare(b[0])));
+    const p = calcularPendencias(cs, es, h).filter((x) => x.tipo !== 'exame_sem_consulta');
+    const por =Object.fromEntries(p.map((x) => [x.tipo + ':' + x.id, x.pacienteId]).sort((a, b) => a[0].localeCompare(b[0])));
     igual(por, { 'aguardando_resultado:e3': A, 'consulta_sem_registro:c1': A, 'exame_nao_confirmado:e2': B,
       'exame_sem_data:e1': A, 'resultado_nao_apresentado:e4': B, 'retorno_nao_agendado:c2': B }, 'pendências (c3 já tem retorno, e5 já foi apresentado)');
   });
@@ -173,6 +173,19 @@ const v2 = () => ({
     igual(vinculosDoExame(es[0], cs, an).retornos, 1, 'exame em retorno');
     igual(vinculosDoExame(es[1], cs, an).total, 0, 'exame solto');
     verificar(descreverVinculos(v1).includes('1 exame'), 'texto do aviso');
+  });
+
+  await teste('Associar exame solto à consulta: mesmo familiar, completa dados e sai das pendências', () => {
+    const cs = [{ id: 'c1', pacienteId: 'A', medico: 'Dra. X', especialidade: 'Clínico', data: '2026-03-01', status: 'realizada' },
+      { id: 'c2', pacienteId: 'B', status: 'realizada' }];
+    const solto = { id: 'e1', pacienteId: 'A', nome: 'Hemograma', status: 'solicitado', dataSolicitacao: '2026-03-10' };
+    verificar(calcularPendencias(cs, [solto], '2026-03-20').some((p) => p.tipo === 'exame_sem_consulta' && !p.atencao), 'solto vira pendência leve');
+    const r = associarExame(solto, cs[0], cs);
+    igual([r.exame.consultaId, r.exame.medico, r.exame.especialidade, r.exame.dataSolicitacao], ['c1', 'Dra. X', 'Clínico', '2026-03-01'], 'dados completados');
+    verificar(!calcularPendencias(cs, [r.exame], '2026-03-20').some((p) => p.tipo === 'exame_sem_consulta'), 'associado sai da pendência');
+    verificar(associarExame(solto, cs[1], cs).erro, 'não associa a consulta de outro familiar');
+    igual(associarExame({ ...solto, medico: 'Dr. Y' }, cs[0], cs).exame.medico, 'Dra. X', 'a consulta define quem pediu');
+    igual(associarExame({ ...solto, medico: 'Dr. Y' }, { ...cs[0], medico: '' }, cs).exame.medico, 'Dr. Y', 'consulta sem médico mantém o do exame');
   });
 
   await teste('Arquivados não geram pendências nem entram em retorno', () => {

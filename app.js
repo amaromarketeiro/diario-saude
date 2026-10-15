@@ -71,6 +71,32 @@ function confirmar(mensagem, { titulo = 'Confirmar', sim = 'Confirmar', nao = 'C
 }
 const avisar = (mensagem, titulo = 'Aviso') => confirmar(mensagem, { titulo, sim: 'Entendi', nao: '' });
 
+// Caixa com lista de exames para marcar (usada para associar exames soltos a uma consulta)
+function escolherExames(exames, texto) {
+  return new Promise((responder) => {
+    const m = $('#modal');
+    m.innerHTML = `<div class="modal-fundo" data-resp="nao"></div>
+      <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="dlg-titulo">
+        <h3 id="dlg-titulo">Associar exames</h3>
+        <p class="mudo">${esc(texto)}</p>
+        <div class="lista-marcar">${exames.map((e) => `<label class="marcar">
+          <input type="checkbox" value="${e.id}">
+          <span><strong>${esc(e.nome)}</strong><small>${esc([fmtCurta(e.dataSolicitacao), e.medico, STATUS_EXAME[e.status]].filter(Boolean).join(' · '))}</small></span>
+        </label>`).join('')}</div>
+        <div class="acoes"><button class="btn" data-resp="nao">Cancelar</button><button class="btn primario" data-resp="sim">🔗 Associar</button></div>
+      </div>`;
+    m.hidden = false;
+    m.onclick = (ev) => {
+      const b = ev.target.closest('[data-resp]');
+      if (!b) return;
+      const marcados = b.dataset.resp === 'sim' ? [...m.querySelectorAll('input:checked')].map((x) => x.value) : [];
+      if (b.dataset.resp === 'sim' && !marcados.length) return toast('Marque pelo menos um exame.');
+      m.hidden = true; m.innerHTML = ''; m.onclick = null;
+      responder(marcados);
+    };
+  });
+}
+
 // Erros no console sem conteúdo médico: só o tipo e a mensagem técnica
 const registrarErro = (onde, err) => console.error(`[Diário] ${onde}:`, err?.name || 'Erro', err?.message || '');
 
@@ -196,18 +222,68 @@ function ligarAnexos(lista, tipoDono, idDono, recarregar) {
   };
 }
 
+// Visualizador de documentos: ver, abrir, imprimir, compartilhar e baixar
+const NO_CELULAR = /Android|iPhone|iPad/i.test(navigator.userAgent);
+const ehPdf = (a) => a.mime === 'application/pdf' || /\.pdf$/i.test(a.nome || '');
+
 function abrirAnexo(a) {
   const url = URL.createObjectURL(a.blob);
-  if (!a.mime?.startsWith('image/')) { window.open(url, '_blank'); return; }
+  const imagem = a.mime?.startsWith('image/');
+  const arquivo = new File([a.blob], a.nome || (imagem ? 'documento.jpg' : 'documento.pdf'), { type: a.mime || 'application/octet-stream' });
+  const podeEnviar = !!navigator.canShare?.({ files: [arquivo] });
+  // No celular o Chrome não mostra PDF dentro da página: mostramos um cartão e o botão "Abrir"
+  const previa = imagem ? `<img src="${url}" alt="${esc(TIPOS_DOC[a.tipoDoc] || 'Documento')}">`
+    : ehPdf(a) && !NO_CELULAR ? `<iframe src="${url}" title="${esc(a.nome || 'PDF')}"></iframe>`
+      : `<div class="vis-pdf">📄<strong>PDF</strong><span>Toque em “Abrir” para ver no visualizador do aparelho.</span></div>`;
   const m = $('#modal');
-  m.innerHTML = `<div class="modal-fundo" data-fechar></div><div class="modal-caixa">
-    <img src="${url}" alt="">
-    <div class="acoes"><a class="btn" href="${url}" download="${esc(a.nome)}">⬇️ Baixar</a><button class="btn" data-fechar>Fechar</button></div></div>`;
+  m.innerHTML = `<div class="modal-fundo" data-fechar></div>
+    <div class="visualizador" role="dialog" aria-modal="true" aria-label="Documento">
+      <div class="vis-topo"><span><strong>${esc(TIPOS_DOC[a.tipoDoc] || 'Documento')}</strong><small>${esc(a.nome || '')}</small></span>
+        <button class="btn pequeno" data-fechar aria-label="Fechar">✕</button></div>
+      <div class="vis-corpo">${previa}</div>
+      <div class="acoes">
+        <button class="btn primario" data-acao="abrir">↗️ Abrir</button>
+        <button class="btn" data-acao="imprimir">🖨️ Imprimir</button>
+        ${podeEnviar ? '<button class="btn" data-acao="compartilhar">📤 Compartilhar</button>' : ''}
+        <a class="btn" href="${url}" download="${esc(arquivo.name)}">⬇️ Baixar</a>
+      </div></div>`;
   m.hidden = false;
-  m.onclick = (ev) => {
-    if (!ev.target.hasAttribute('data-fechar')) return;
-    m.hidden = true; m.innerHTML = ''; URL.revokeObjectURL(url);
+  const fechar = () => { m.hidden = true; m.innerHTML = ''; m.onclick = null; setTimeout(() => URL.revokeObjectURL(url), 60000); };
+  m.onclick = async (ev) => {
+    if (ev.target.closest('[data-fechar]')) return fechar();
+    const acao = ev.target.closest('[data-acao]')?.dataset.acao;
+    if (acao === 'abrir') window.open(url, '_blank');
+    if (acao === 'imprimir') imprimirAnexo(a, url, imagem);
+    if (acao === 'compartilhar') navigator.share({ files: [arquivo], title: TIPOS_DOC[a.tipoDoc] || 'Documento' }).catch(() => { });
   };
+}
+
+function imprimirAnexo(a, url, imagem) {
+  if (imagem) {
+    // Imprime só a imagem: a página entra num "modo impressão" que esconde o resto
+    const area = document.createElement('div');
+    area.id = 'area-impressao';
+    area.innerHTML = `<img src="${url}" alt="">`;
+    document.body.appendChild(area);
+    document.body.classList.add('imprimindo-anexo');
+    const limpar = () => { document.body.classList.remove('imprimindo-anexo'); area.remove(); window.removeEventListener('afterprint', limpar); };
+    window.addEventListener('afterprint', limpar);
+    area.querySelector('img').onload = () => setTimeout(() => window.print(), 50);
+    setTimeout(limpar, 60000);
+    return;
+  }
+  if (NO_CELULAR) {
+    avisar('No celular, o PDF abre no visualizador do aparelho. Lá, use o menu ⋮ → Imprimir (ou Compartilhar → Imprimir).', 'Imprimir PDF')
+      .then(() => window.open(url, '_blank'));
+    return;
+  }
+  // Computador: imprime o PDF por um quadro invisível
+  const quadro = document.createElement('iframe');
+  quadro.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
+  quadro.src = url;
+  quadro.onload = () => { try { quadro.contentWindow.focus(); quadro.contentWindow.print(); } catch { window.open(url, '_blank'); } };
+  document.body.appendChild(quadro);
+  setTimeout(() => quadro.remove(), 120000);
 }
 
 // ===================== Agenda (eventos a partir das consultas e exames) =====================
@@ -345,6 +421,7 @@ async function telaConsulta(id) {
   if (!c) return naoEncontrado();
   const [anexos, todosExames, todasConsultas] = await Promise.all([anexosDe('consulta', id), DB.todos('exames'), DB.todos('consultas')]);
   const exames = todosExames.filter((e) => e.consultaId === id);
+  const soltosDoFamiliar = todosExames.filter((e) => !e.consultaId && !e.arquivado && e.pacienteId === c.pacienteId);
   const retornoDe = todosExames.filter((e) => (c.retornoDe || []).includes(e.id));
   const origem = c.consultaOrigemId ? todasConsultas.find((x) => x.id === c.consultaOrigemId) : null;
   const retornos = todasConsultas.filter((x) => x.consultaOrigemId === id && x.status !== 'cancelada');
@@ -389,7 +466,10 @@ async function telaConsulta(id) {
     <div class="bloco">
       <h3>Pedidos de exame desta consulta</h3>
       ${exames.length ? exames.map(cardExame).join('') : '<p class="mudo">Nenhum pedido de exame registrado.</p>'}
-      <a class="btn" href="#/exame/novo?consulta=${id}">+ Adicionar pedido de exame</a>
+      <div class="acoes">
+        <a class="btn" href="#/exame/novo?consulta=${id}">+ Adicionar pedido de exame</a>
+        ${soltosDoFamiliar.length ? `<button class="btn" id="associar-soltos">🔗 Associar exame já cadastrado (${soltosDoFamiliar.length})</button>` : ''}
+      </div>
     </div>
 
     <div class="bloco">
@@ -428,6 +508,20 @@ async function telaConsulta(id) {
   if (bIcs) bIcs.onclick = () => baixarICS({ chave: 'c-' + c.id, data: c.data, hora: c.hora,
     titulo: `Consulta${c.medico ? ' com ' + c.medico : ''}${mostrarNomesCalendario() ? ' (' + nomeFamiliar(c.pacienteId) + ')' : ''}`,
     local: c.local, descricao: c.assunto });
+  const bSoltos = $('#associar-soltos');
+  if (bSoltos) bSoltos.onclick = async () => {
+    const escolhidos = await escolherExames(soltosDoFamiliar, `Exames de ${nomeFamiliar(c.pacienteId)} sem consulta. Marque os que foram pedidos nesta consulta:`);
+    if (!escolhidos.length) return;
+    const atualizados = [];
+    for (const e of soltosDoFamiliar.filter((x) => escolhidos.includes(x.id))) {
+      const r = associarExame(e, c, todasConsultas);
+      if (r.erro) return avisar(r.erro, 'Não foi possível associar');
+      atualizados.push({ ...r.exame, atualizadoEm: Date.now() });
+    }
+    await DB.lote(['exames'], (s) => atualizados.forEach((x) => s.exames.put(x)));
+    toast(`🔗 ${atualizados.length} exame(s) associado(s) a esta consulta ✓`);
+    telaConsulta(id);
+  };
   const bDesarq = $('#desarquivar');
   if (bDesarq) bDesarq.onclick = async () => {
     await DB.salvar('consultas', { ...c, arquivado: false, arquivadoEm: null });
@@ -473,6 +567,13 @@ async function telaFormConsulta(id, q = {}) {
       travaFamiliar = 'O retorno é sempre do mesmo familiar da consulta e dos exames.';
     }
   }
+  // Registrar depois a consulta que pediu um exame já cadastrado (fica como realizada e o exame é associado)
+  const paraExame = !id && q.paraExame ? es.find((x) => x.id === q.paraExame) : null;
+  if (paraExame) {
+    c = { ...c, status: 'realizada', pacienteId: paraExame.pacienteId, medico: paraExame.medico || '',
+      especialidade: paraExame.especialidade || '', data: paraExame.dataSolicitacao || '' };
+    travaFamiliar = 'A consulta é do mesmo familiar do exame.';
+  }
   const temDetalhes = id || c.local || c.assunto;
 
   render(`<form id="form" class="form">
@@ -490,10 +591,11 @@ async function telaFormConsulta(id, q = {}) {
       ${id ? campo('Anotações (o que o médico disse)', 'anotacoes', c.anotacoes, { linhas: 3 }) : ''}
     </details>
     ${c.retornoDe?.length ? `<p class="mudo">↩️ Este retorno vai levar ${c.retornoDe.length} resultado(s) de exame.</p>` : ''}
+    ${paraExame ? `<p class="mudo">🔗 Ao salvar, o exame <strong>${esc(paraExame.nome)}</strong> fica associado a esta consulta (registrada como realizada).</p>` : ''}
     <div class="acoes"><button class="btn primario" type="submit">Salvar</button>
       <button class="btn" type="button" onclick="history.back()">Cancelar</button></div>
     ${await sugestoes()}
-  </form>`, id ? 'Editar consulta' : travaFamiliar ? 'Agendar retorno' : 'Nova consulta', true);
+  </form>`, id ? 'Editar consulta' : paraExame ? 'Consulta que pediu o exame' : travaFamiliar ? 'Agendar retorno' : 'Nova consulta', true);
 
   await ligarAutoMedico($('#form'), true);
   $('#form').onsubmit = async (ev) => {
@@ -514,25 +616,46 @@ async function telaFormConsulta(id, q = {}) {
       if (!(await confirmar(`Os ${ligados.length} exame(s) pedidos nesta consulta também passarão para ${nomeFamiliar(novo.pacienteId)}.`,
         { titulo: 'Trocar o familiar?', sim: 'Trocar' }))) return;
     }
+    // Consulta registrada a partir de um exame solto: associa o exame junto, na mesma gravação
+    let exameAssociado = null;
+    if (paraExame) {
+      const r = associarExame(paraExame, novo, [...cs, novo]);
+      if (r.erro) return avisar(r.erro, 'Não foi possível associar');
+      exameAssociado = r.exame;
+    }
     const agora = Date.now();
     await DB.lote(['consultas', 'exames'], (s) => {
       s.consultas.put({ ...novo, atualizadoEm: agora });
       for (const e of ligados) s.exames.put({ ...e, pacienteId: novo.pacienteId, atualizadoEm: agora });
+      if (exameAssociado) s.exames.put({ ...exameAssociado, atualizadoEm: agora });
     });
     await registrarMedico(novo.medico, novo);
-    toast('Consulta salva ✓');
-    if (!id && 'Notification' in window && Notification.permission === 'default') pedirPermissaoAvisos();
-    location.hash = '#/consulta/' + novo.id;
+    toast(exameAssociado ? '🔗 Consulta registrada e exame associado ✓' : 'Consulta salva ✓');
+    if (!id && !paraExame && 'Notification' in window && Notification.permission === 'default') pedirPermissaoAvisos();
+    location.hash = exameAssociado ? '#/exame/' + exameAssociado.id : '#/consulta/' + novo.id;
   };
 }
 
 // ===================== Exames =====================
+// Quantos documentos cada consulta/exame tem (atualizado a cada troca de tela)
+let ANEXOS_POR_DONO = new Map();
+async function contarAnexos() {
+  ANEXOS_POR_DONO = new Map();
+  for (const a of await DB.todos('anexos')) ANEXOS_POR_DONO.set(a.idDono, (ANEXOS_POR_DONO.get(a.idDono) || 0) + 1);
+}
+
+const vinculoExame = (e) => e.consultaId
+  ? '<span class="vinc ok">🔗 Associado</span>'
+  : '<span class="vinc solto">🧩 Solto</span>';
+
 function cardExame(e) {
+  const docs = ANEXOS_POR_DONO.get(e.id);
   return `<a class="card exame ${e.arquivado ? 'esmaecido' : ''}" href="#/exame/${e.id}"
-    data-busca="${esc(paraBusca(e.nome, e.medico, e.especialidade, e.localExame, e.resumo, nomeFamiliar(e.pacienteId)))}">
+    data-busca="${esc(paraBusca(e.nome, e.medico, e.especialidade, e.localExame, e.resumo, nomeFamiliar(e.pacienteId), e.consultaId ? 'associado' : 'solto'))}">
     <div class="card-ic">🧪</div>
     <div class="card-corpo">${tagFamiliar(e.pacienteId)}<strong>${esc(e.nome)}</strong>
-      <small>${esc([e.medico, e.especialidade].filter(Boolean).join(' · ') || '—')}</small></div>
+      <small>${esc([e.medico, e.especialidade].filter(Boolean).join(' · ') || 'Médico não informado')}</small>
+      <small class="linha-vinc">${vinculoExame(e)}${docs ? `<span class="vinc">📎 ${docs}</span>` : ''}</small></div>
     ${seloArquivado(e) || `<span class="badge ${e.status}">${STATUS_EXAME[e.status]}</span>`}</a>`;
 }
 
@@ -540,14 +663,17 @@ async function telaExames(_, q = {}) {
   const filtro = q.filtro || 'todos';
   const todos = doFiltro(await DB.todos('exames')).sort((a, b) => (b.dataSolicitacao || '').localeCompare(a.dataSolicitacao || ''));
   const es = todos.filter((e) => !e.arquivado);
+  const soltos = es.filter((e) => !e.consultaId);
   const filtros = { todos: 'Todos', solicitado: 'Sem data', marcado: 'Marcados', realizado: 'Aguardando', resultado: 'Concluídos',
-    arquivados: `🗄️ Arquivados (${todos.length - es.length})` };
-  const lista = filtro === 'arquivados' ? todos.filter((e) => e.arquivado) : filtro === 'todos' ? es : es.filter((e) => e.status === filtro);
+    soltos: `🧩 Soltos (${soltos.length})`, arquivados: `🗄️ Arquivados (${todos.length - es.length})` };
+  const lista = filtro === 'arquivados' ? todos.filter((e) => e.arquivado) : filtro === 'soltos' ? soltos
+    : filtro === 'todos' ? es : es.filter((e) => e.status === filtro);
   let html = seletorFamilia() + `<div class="chips">${Object.entries(filtros).map(([k, v]) =>
     `<a class="chip ${k === filtro ? 'ativo' : ''}" href="#/exames?filtro=${k}">${v}</a>`).join('')}</div>`;
   if (lista.length) html += caixaBusca('Buscar por exame, médico, local…');
   if (!todos.length) html += vazio('Nenhum exame', 'Os pedidos de exame ficam ligados à consulta em que foram pedidos. Você também pode cadastrar um avulso.', '#/exame/novo', '+ Novo exame');
-  else if (!lista.length) html += '<p class="mudo centro">Nenhum exame nesta situação.</p>';
+  else if (!lista.length) html += `<p class="mudo centro">${filtro === 'soltos' ? 'Nenhum exame solto: todos estão associados a uma consulta ✓' : 'Nenhum exame nesta situação.'}</p>`;
+  if (filtro === 'soltos' && lista.length) html += '<p class="mudo">Exames ainda sem a consulta que os pediu. Abra cada um e toque em “Associar”.</p>';
   html += lista.map(cardExame).join('');
   html += botaoFlutuante('#/exame/novo', '+ Exame');
   render(html, 'Exames');
@@ -558,11 +684,34 @@ async function telaExame(id) {
   const e = await DB.pegar('exames', id);
   if (!e) return naoEncontrado();
   const anexos = await anexosDe('exame', id);
-  const origem = e.consultaId ? await DB.pegar('consultas', e.consultaId) : null;
-  const retornos = (await DB.todos('consultas')).filter((c) => (c.retornoDe || []).includes(id) && c.status !== 'cancelada');
+  const todasConsultas = await DB.todos('consultas');
+  const origem = e.consultaId ? todasConsultas.find((c) => c.id === e.consultaId) : null;
+  const retornos = todasConsultas.filter((c) => (c.retornoDe || []).includes(id) && c.status !== 'cancelada');
   const passo = PASSOS.indexOf(e.status);
   const f = FAMILIA.porId.get(e.pacienteId);
   const salvarEtapa = async (dados, msg) => { Object.assign(e, dados); await DB.salvar('exames', e); toast(msg); telaExame(id); };
+
+  // Vínculo com a consulta que pediu (pode ser feito a qualquer momento)
+  const opcoesConsulta = todasConsultas
+    .filter((c) => c.pacienteId === e.pacienteId && c.id !== e.consultaId && c.status !== 'cancelada' && !c.arquivado)
+    .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+  const formAssociar = `<div class="form-assoc" ${origem ? 'hidden' : ''} id="form-assoc">
+      ${opcoesConsulta.length ? `<label class="campo"><span>Consulta em que o exame foi pedido</span><select id="sel-assoc">
+        ${opcoesConsulta.map((c) => `<option value="${c.id}">${fmtCurta(c.data)} · ${esc(c.medico || c.especialidade || 'Consulta')}${c.status === 'agendada' ? ' (agendada)' : ''}</option>`).join('')}
+        </select></label>
+        <button class="btn primario" id="associar">🔗 Associar</button>` : `<p class="mudo">${esc(nomeFamiliar(e.pacienteId))} ainda não tem consultas cadastradas.</p>`}
+      <a class="btn" href="#/consulta/nova?paraExame=${id}">＋ Registrar a consulta que pediu</a>
+    </div>`;
+  const blocoVinculo = origem
+    ? `<div class="bloco vinculo ok"><h3>🔗 Associado à consulta que pediu</h3>
+        ${cardConsulta(origem)}
+        <div class="acoes"><a class="btn" href="#/jornada/${origem.id}">🧭 Ver jornada</a>
+          ${opcoesConsulta.length ? '<button class="btn" id="trocar-assoc">🔁 Trocar</button>' : ''}
+          <button class="btn" id="desassociar">✂️ Desassociar</button></div>
+        ${formAssociar}</div>`
+    : `<div class="bloco vinculo solto"><h3>🧩 Solto: sem consulta associada</h3>
+        <p class="mudo">Associe à consulta em que o exame foi pedido. Assim ele entra na jornada, o médico é preenchido e o retorno junta os exames certos.</p>
+        ${formAssociar}</div>`;
 
   let painel = '';
   if (e.status === 'solicitado') {
@@ -619,9 +768,9 @@ async function telaExame(id) {
       <h2>${esc(e.nome)}</h2>
       <p>Pedido por ${esc(e.medico || '—')}${e.especialidade ? ' · ' + esc(e.especialidade) : ''}</p>
       <p class="mudo">Solicitado em ${fmtCurta(e.dataSolicitacao)}</p>
-      ${origem ? `<a class="link" href="#/consulta/${origem.id}">Ver consulta de origem (${fmtCurta(origem.data)})</a><br>
-        <a class="link" href="#/jornada/${origem.id}">🧭 Ver jornada completa</a>` : ''}
+      <p class="linha-vinc">${vinculoExame(e)}${anexos.length ? `<span class="vinc">📎 ${anexos.length} documento(s)</span>` : ''}</p>
     </div>
+    ${blocoVinculo}
     <ol class="passos">${PASSOS.map((p, i) => `<li class="${i < passo || e.status === 'resultado' ? 'feito' : i === passo ? 'atual' : ''}">${NOME_PASSO[p]}</li>`).join('')}</ol>
     ${painel}
     ${e.observacoes ? `<div class="bloco"><h3>Observações</h3><p class="texto">${esc(e.observacoes)}</p></div>` : ''}
@@ -646,6 +795,25 @@ async function telaExame(id) {
   if (bIcs) bIcs.onclick = () => baixarICS(e.status === 'marcado'
     ? { chave: 'e-' + id, data: e.dataExame, hora: e.horaExame, titulo: `Exame: ${e.nome}${nomeCal}`, local: e.localExame, descricao: `Pedido por ${e.medico || ''}` }
     : { chave: 'r-' + id, data: e.dataResultado, hora: e.horaResultado, titulo: `Buscar resultado: ${e.nome}${nomeCal}`, local: e.localResultado, descricao: '' });
+
+  // Vínculo: associar / trocar / desassociar
+  const bAssoc = $('#associar');
+  if (bAssoc) bAssoc.onclick = async () => {
+    const r = associarExame(e, todasConsultas.find((c) => c.id === $('#sel-assoc').value), todasConsultas);
+    if (r.erro) return avisar(r.erro, 'Não foi possível associar');
+    await DB.salvar('exames', r.exame);
+    await registrarMedico(r.exame.medico, { especialidade: r.exame.especialidade });
+    toast('🔗 Exame associado à consulta ✓');
+    telaExame(id);
+  };
+  const bTrocar = $('#trocar-assoc');
+  if (bTrocar) bTrocar.onclick = () => { $('#form-assoc').hidden = false; bTrocar.hidden = true; };
+  const bDesassoc = $('#desassociar');
+  if (bDesassoc) bDesassoc.onclick = async () => {
+    if (!(await confirmar('O exame deixa de estar ligado a esta consulta e volta a ficar “solto”. As datas e os documentos do exame são mantidos; ao associar a outra consulta, o médico dela passa a valer.',
+      { titulo: 'Desassociar da consulta?', sim: '✂️ Desassociar' }))) return;
+    salvarEtapa({ consultaId: null }, 'Exame desassociado: agora está solto');
+  };
 
   const bApres = $('#apresentado');
   if (bApres) bApres.onclick = () => salvarEtapa({ resultadoApresentado: !e.resultadoApresentado },
@@ -1107,7 +1275,7 @@ async function navegar() {
     if (!m) continue;
     const carregando = setTimeout(() => { $('#app').innerHTML = '<div class="carregando" role="status">Carregando…</div>'; }, 250);
     try {
-      await carregarFamilia();
+      await Promise.all([carregarFamilia(), contarAnexos()]);
       await tela(m[1], q);
     } catch (err) {
       registrarErro('tela ' + parte, err);
@@ -1162,12 +1330,10 @@ function calendarioHoje() {
   const d = new Date();
   const mes = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase();
   return `<svg viewBox="0 0 32 32" class="cal-svg" role="img" aria-label="Hoje, ${d.getDate()} de ${mes}">
-    <rect class="cal-folha" x="2.5" y="5.5" width="27" height="25" rx="6"/>
-    <path class="cal-faixa" d="M2.5 11.5a6 6 0 0 1 6-6h15a6 6 0 0 1 6 6v3h-27z"/>
-    <rect class="cal-argola" x="6.5" y="2.5" width="3" height="5.5" rx="1.5"/>
-    <rect class="cal-argola" x="22.5" y="2.5" width="3" height="5.5" rx="1.5"/>
-    <text class="cal-mes" x="16" y="13" text-anchor="middle">${mes}</text>
-    <text class="cal-dia" x="16" y="27.8" text-anchor="middle">${d.getDate()}</text>
+    <rect class="cal-folha" x="2.5" y="3" width="27" height="27" rx="6"/>
+    <path class="cal-faixa" d="M2.5 9a6 6 0 0 1 6-6h15a6 6 0 0 1 6 6v3h-27z"/>
+    <text class="cal-mes" x="16" y="10.2" text-anchor="middle">${mes}</text>
+    <text class="cal-dia" x="16" y="26.4" text-anchor="middle">${d.getDate()}</text>
   </svg>`;
 }
 

@@ -54,15 +54,14 @@ main { max-width: 640px; margin: 0 auto; padding: 16px; }
 .abas a span { font-size: 22px; filter: grayscale(1); opacity: .7; }
 .abas a.ativa { color: var(--prim); font-weight: 600; }
 /* Calendário de mesa com a data de hoje (aba Agenda e Agenda vazia) */
-.cal-svg { --cal-cor: #ef4444; --cal-argola: #475569; display: block; width: 100%; height: 100%; overflow: visible; }
+.cal-svg { --cal-cor: #ef4444; display: block; width: 100%; height: 100%; overflow: visible; }
 .cal-folha { fill: #fff; stroke: var(--cal-cor); stroke-width: 1.6; }
 .cal-faixa { fill: var(--cal-cor); }
-.cal-argola { fill: var(--cal-argola); stroke: #fff; stroke-width: 1; }
 .cal-svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight: 800; }
 .cal-mes { fill: #fff; font-size: 6px; letter-spacing: .3px; }
 .cal-dia { fill: #1f2937; font-size: 13px; letter-spacing: -.3px; }
 .abas a .cal-hoje { width: 30px; height: 30px; margin: 1px 0; filter: none; }
-.abas a:not(.ativa) .cal-svg { --cal-cor: #94a3b8; --cal-argola: #94a3b8; }
+.abas a:not(.ativa) .cal-svg { --cal-cor: #94a3b8; }
 .abas a:not(.ativa) .cal-dia { fill: #64748b; }
 .cal-grande { width: 76px; height: 76px; margin: 0 auto 4px; }
 .cal-grande .cal-folha { stroke-width: 1.2; }
@@ -291,6 +290,45 @@ button.fab { border: 0; font: inherit; font-weight: 700; cursor: pointer; }
 .aviso-backup { background: var(--alerta-claro); flex-direction: column; align-items: stretch; }
 .aviso-backup .acoes { margin: 0; }
 .aviso-backup .acoes .btn { flex: 1 1 auto; }
+
+/* ---------- Vínculo exame ↔ consulta ---------- */
+.linha-vinc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px !important; }
+.vinc { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--cinza-claro); color: var(--mudo); }
+.vinc.ok { background: var(--verde-claro); color: var(--verde); }
+.vinc.solto { background: var(--alerta-claro); color: var(--alerta); }
+.bloco.vinculo.ok { border-color: var(--verde); }
+.bloco.vinculo.solto { border-color: var(--alerta); background: var(--alerta-claro); }
+.form-assoc { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.form-assoc[hidden] { display: none; }
+.lista-marcar { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow: auto; margin-top: 8px; }
+.marcar { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 12px; cursor: pointer; }
+.marcar input { width: 22px; height: 22px; min-height: 0; flex: none; }
+.marcar span { display: flex; flex-direction: column; }
+.marcar small { color: var(--mudo); }
+.marcar:has(input:checked) { border-color: var(--prim); background: var(--prim-claro); }
+
+/* ---------- Visualizador de documentos ---------- */
+.visualizador {
+  position: relative; background: var(--cartao); border-radius: 18px; padding: 14px; width: min(640px, 100%);
+  max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 10px; box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
+}
+.vis-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.vis-topo span { display: flex; flex-direction: column; min-width: 0; }
+.vis-topo small { color: var(--mudo); overflow-wrap: anywhere; }
+.vis-corpo { flex: 1; min-height: 0; overflow: auto; border-radius: 10px; background: var(--cinza-claro); display: grid; place-items: center; }
+.vis-corpo img { max-width: 100%; max-height: calc(100vh - 220px); object-fit: contain; display: block; }
+.vis-corpo iframe { width: 100%; height: calc(100vh - 220px); border: 0; background: #fff; }
+.vis-pdf { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 32px 16px; text-align: center; font-size: 40px; }
+.vis-pdf strong { font-size: 16px; }
+.vis-pdf span { font-size: 14px; color: var(--mudo); }
+.visualizador .acoes { margin: 0; }
+.visualizador .acoes .btn { flex: 1 1 120px; }
+#area-impressao { display: none; }
+@media print {
+  body.imprimindo-anexo > *:not(#area-impressao) { display: none !important; }
+  body.imprimindo-anexo #area-impressao { display: block; }
+  #area-impressao img { max-width: 100%; max-height: 98vh; object-fit: contain; display: block; margin: 0 auto; }
+}
 
 /* ---------- Confirmação, arquivados e busca ---------- */
 .dialogo {
