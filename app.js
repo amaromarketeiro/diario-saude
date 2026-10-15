@@ -122,16 +122,20 @@ function vazio(titulo, texto, link, botao) {
 
 const botaoFlutuante = (link, texto) => `<a class="fab" href="${link}">${texto}</a>`;
 
-// Menu de criação rápida (Agenda): Nova consulta / Novo exame
+// Menu de criação rápida (Agenda).
+// "Todos": consulta, exame e novo familiar. Um familiar no filtro: só consulta e exame para ele.
 function abrirMenuNovo() {
   const m = $('#modal');
-  const p = filtroAtual() !== 'todos' ? `?paciente=${filtroAtual()}` : '';
+  const f = filtroAtual() !== 'todos' ? FAMILIA.porId.get(filtroAtual()) : null;
+  const p = f ? `?paciente=${f.id}` : '';
+  const para = f ? ` para ${esc(nomeExibicao(f))}` : '';
   m.innerHTML = `<div class="modal-fundo" data-fechar></div>
     <div class="folha" role="dialog" aria-label="Criar novo">
-      <h3>O que você quer cadastrar?</h3>
-      <a class="opcao" href="#/consulta/nova${p}" data-fechar><span>🩺</span><span><strong>Nova consulta</strong><small>Familiar, médico, data e hora</small></span></a>
-      <a class="opcao" href="#/exame/novo${p}" data-fechar><span>🧪</span><span><strong>Novo exame</strong><small>Pedido de exame, com ou sem data</small></span></a>
-      <a class="opcao" href="#/familiar/novo" data-fechar><span>👨‍👩‍👧</span><span><strong>Novo familiar</strong><small>Cadastrar uma pessoa da família</small></span></a>
+      <h3>${f ? `${avatar(f, 'mini')} Cadastrar para ${esc(nomeExibicao(f))}` : 'O que você quer cadastrar?'}</h3>
+      <a class="opcao" href="#/consulta/nova${p}" data-fechar><span>🩺</span><span><strong>Nova consulta${para}</strong><small>${f ? 'Médico, data e hora' : 'Familiar, médico, data e hora'}</small></span></a>
+      <a class="opcao" href="#/exame/novo${p}" data-fechar><span>🧪</span><span><strong>Novo exame${para}</strong><small>Pedido de exame, com ou sem data</small></span></a>
+      ${f ? '<p class="mudo centro">Para cadastrar um familiar, selecione “Todos” no topo.</p>'
+        : '<a class="opcao" href="#/familiar/novo" data-fechar><span>👨‍👩‍👧</span><span><strong>Novo familiar</strong><small>Cadastrar uma pessoa da família</small></span></a>'}
       <button class="btn" data-fechar>Cancelar</button>
     </div>`;
   m.hidden = false;
