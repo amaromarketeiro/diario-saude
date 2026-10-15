@@ -48,6 +48,9 @@ function linhaDoTempo(cs, es) {
     const dataRes = [e.dataRecebido || e.dataResultado, e.dataExame].filter(Boolean).sort().pop();
     if (e.status === 'resultado') itens.push({ ...base, data: dataRes, icone: '📄', titulo: `Resultado: ${e.nome}`, sub: e.resumo || '' });
   }
+  // Marca o que está arquivado (continua visível no histórico)
+  const arquivados = new Set([...cs, ...es].filter((x) => x.arquivado).map((x) => x.id));
+  for (const i of itens) i.arquivado = arquivados.has(i.link.split('/').pop());
   return itens.filter((i) => i.data).sort((a, b) => (b.data + (b.hora || '')).localeCompare(a.data + (a.hora || '')));
 }
 
@@ -62,7 +65,7 @@ function listaLinhaDoTempo(itens) {
     }
     html += `<li><a href="${i.link}" class="${i.futuro ? 'futuro' : ''}"><span class="li-ic">${i.icone}</span>
       <span class="li-corpo">${tagFamiliar(i.pacienteId)}<strong>${esc(i.titulo)}</strong>
-      <small>${fmtCurta(i.data)}${i.hora ? ' · ' + esc(i.hora) : ''}${i.sub ? ' · ' + esc(i.sub) : ''}</small></span></a></li>`;
+      <small>${fmtCurta(i.data)}${i.hora ? ' · ' + esc(i.hora) : ''}${i.sub ? ' · ' + esc(i.sub) : ''}${i.arquivado ? ' · 🗄️ arquivado' : ''}</small></span></a></li>`;
   }
   return html + '</ul>';
 }
@@ -71,8 +74,11 @@ function listaLinhaDoTempo(itens) {
 async function carregarTudo(q) {
   const inicio = inicioPeriodo(q.periodo);
   const [todasC, todosE, ms] = await Promise.all([DB.todos('consultas'), DB.todos('exames'), DB.todos('medicos')]);
-  const cs = doFiltro(todasC), es = doFiltro(todosE);
-  return { cs, es, ms, csP: cs.filter((c) => noPeriodo(c.data, inicio)), esP: es.filter((e) => noPeriodo(dataDoExame(e), inicio)) };
+  // Arquivados ficam fora das contagens, mas aparecem no histórico (linha do tempo e documentos)
+  const csTodos = doFiltro(todasC), esTodos = doFiltro(todosE);
+  const cs = csTodos.filter(ativo), es = esTodos.filter(ativo);
+  const cP = (c) => noPeriodo(c.data, inicio), eP = (e) => noPeriodo(dataDoExame(e), inicio);
+  return { cs, es, ms, csP: cs.filter(cP), esP: es.filter(eP), csTodosP: csTodos.filter(cP), esTodosP: esTodos.filter(eP) };
 }
 
 // ---------- Tela principal de relatórios ----------
@@ -191,7 +197,7 @@ async function telaRelExames(_, q = {}) {
 
 // ---------- Documentos (receitas, pedidos, laudos...) ----------
 async function telaRelDocumentos(_, q = {}) {
-  const { csP, esP } = await carregarTudo(q);
+  const { csTodosP: csP, esTodosP: esP } = await carregarTudo(q);
   const an = await DB.todos('anexos');
   const donos = new Map([...csP.map((c) => ['consulta:' + c.id, { tipo: 'consulta', x: c, data: c.data }]),
     ...esP.map((e) => ['exame:' + e.id, { tipo: 'exame', x: e, data: dataDoExame(e) }])]);
@@ -216,8 +222,8 @@ async function telaRelDocumentos(_, q = {}) {
 
 // ---------- Linha do tempo com filtros ----------
 async function telaRelLinha(_, q = {}) {
-  const { cs, es, ms, csP, esP } = await carregarTudo(q);
-  const filtrar = (x) => (!q.medico || normalizar(x.medico) === q.medico) && (!q.esp || (x.especialidade || '') === q.esp);
+  const { cs, es, ms, csTodosP: csP, esTodosP: esP } = await carregarTudo(q);
+  const filtrar =(x) => (!q.medico || normalizar(x.medico) === q.medico) && (!q.esp || (x.especialidade || '') === q.esp);
   const especialidades = [...new Set([...cs, ...es].map((x) => x.especialidade).filter(Boolean))].sort();
   const opcoes = (lista, atual) => lista.map(([v, t]) => `<option value="${esc(v)}" ${v === atual ? 'selected' : ''}>${esc(t)}</option>`).join('');
 

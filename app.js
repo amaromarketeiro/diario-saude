@@ -42,6 +42,29 @@ function toast(msg) {
   toast.timer = setTimeout(() => (t.hidden = true), 3500);
 }
 
+// Caixa de confirmação do próprio app. Substitui confirm()/alert() do navegador,
+// que alguns navegadores e apps bloqueiam (respondem "não" sem mostrar nada).
+function confirmar(mensagem, { titulo = 'Confirmar', sim = 'Confirmar', nao = 'Cancelar', perigo = false } = {}) {
+  return new Promise((responder) => {
+    const m = $('#modal');
+    m.innerHTML = `<div class="modal-fundo" data-resp="nao"></div>
+      <div class="dialogo" role="alertdialog" aria-modal="true" aria-labelledby="dlg-titulo" aria-describedby="dlg-texto">
+        <h3 id="dlg-titulo">${esc(titulo)}</h3>
+        <p id="dlg-texto" class="texto">${esc(mensagem)}</p>
+        <div class="acoes">
+          ${nao ? `<button class="btn" data-resp="nao">${esc(nao)}</button>` : ''}
+          <button class="btn ${perigo ? 'perigo-cheio' : 'primario'}" data-resp="sim">${esc(sim)}</button>
+        </div></div>`;
+    m.hidden = false;
+    const fechar = (r) => { m.hidden = true; m.innerHTML = ''; m.onclick = null; document.removeEventListener('keydown', tecla); responder(r); };
+    const tecla = (ev) => { if (ev.key === 'Escape') fechar(false); };
+    document.addEventListener('keydown', tecla);
+    m.onclick = (ev) => { const b = ev.target.closest('[data-resp]'); if (b) fechar(b.dataset.resp === 'sim'); };
+    m.querySelector(nao ? '[data-resp="nao"]' : '[data-resp="sim"]').focus();
+  });
+}
+const avisar = (mensagem, titulo = 'Aviso') => confirmar(mensagem, { titulo, sim: 'Entendi', nao: '' });
+
 // Erros no console sem conteúdo médico: só o tipo e a mensagem técnica
 const registrarErro = (onde, err) => console.error(`[Diário] ${onde}:`, err?.name || 'Erro', err?.message || '');
 
@@ -84,7 +107,7 @@ async function sugestoes() {
   const [cs, es, ms] = await Promise.all([DB.todos('consultas'), DB.todos('exames'), DB.todos('medicos')]);
   const unicos = (arr) => [...new Set(arr.filter(Boolean))];
   const lista = (id, itens) => `<datalist id="${id}">${itens.map((v) => `<option value="${esc(v)}">`).join('')}</datalist>`;
-  const medicos = ms.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  const medicos = ms.filter((m) => !m.arquivado).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
     .map((m) => `<option value="${esc(m.nome)}" label="${esc(m.especialidade || '')}">`).join('');
   return `<datalist id="dl-medicos">${medicos}</datalist>`
     + lista('dl-esp', unicos([...ESPECIALIDADES, ...cs.map((c) => c.especialidade), ...es.map((e) => e.especialidade)]))
@@ -149,7 +172,7 @@ function blocoUpload(tipos, padrao) {
 function ligarAnexos(lista, tipoDono, idDono, recarregar) {
   document.querySelectorAll('[data-ver]').forEach((b) => b.onclick = () => abrirAnexo(lista.find((a) => a.id === b.dataset.ver)));
   document.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
-    if (!confirm('Remover este arquivo?')) return;
+    if (!(await confirmar('O arquivo será apagado deste aparelho. Esta ação não pode ser desfeita.', { titulo: 'Remover arquivo?', sim: 'Remover', perigo: true }))) return;
     await DB.apagar('anexos', b.dataset.del);
     recarregar();
   });
@@ -181,11 +204,12 @@ async function eventos() {
   const [cs, es] = await Promise.all([DB.todos('consultas'), DB.todos('exames')]);
   const ev = [];
   for (const c of cs) {
-    if (c.status === 'agendada' && c.data) ev.push({ chave: 'c-' + c.id, tipo: 'consulta', pacienteId: c.pacienteId, data: c.data, hora: c.hora,
+    if (c.status === 'agendada' && c.data && !c.arquivado) ev.push({ chave: 'c-' + c.id, tipo: 'consulta', pacienteId: c.pacienteId, data: c.data, hora: c.hora,
       titulo: `Consulta${c.medico ? ' com ' + c.medico : ''}`, sub: [c.especialidade, c.local].filter(Boolean).join(' · '),
       local: c.local, descricao: c.assunto, link: '#/consulta/' + c.id });
   }
   for (const e of es) {
+    if (e.arquivado) continue;
     if (e.status === 'marcado' && e.dataExame) ev.push({ chave: 'e-' + e.id, tipo: 'exame', pacienteId: e.pacienteId, data: e.dataExame, hora: e.horaExame,
       titulo: `Exame: ${e.nome}`, sub: e.localExame, local: e.localExame, descricao: `Pedido por ${e.medico || '—'}`, link: '#/exame/' + e.id });
     if (e.status === 'realizado' && e.dataResultado) ev.push({ chave: 'r-' + e.id, tipo: 'resultado', pacienteId: e.pacienteId, data: e.dataResultado, hora: e.horaResultado,
@@ -249,23 +273,57 @@ async function telaAgenda() {
 }
 
 // ===================== Consultas =====================
-const cardConsulta = (c) => `<a class="card consulta ${c.status}" href="#/consulta/${c.id}">
+// Texto usado pela caixa de busca (sem acentos, minúsculo)
+const paraBusca = (...partes) => partes.filter(Boolean).join(' ').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const seloArquivado = (x, feminino) => x.arquivado ? `<span class="badge arquivado">🗄️ Arquivad${feminino ? 'a' : 'o'}</span>` : '';
+
+const cardConsulta = (c) => `<a class="card consulta ${c.status} ${c.arquivado ? 'esmaecido' : ''}" href="#/consulta/${c.id}"
+  data-busca="${esc(paraBusca(c.medico, c.especialidade, c.local, c.assunto, nomeFamiliar(c.pacienteId), fmtCurta(c.data)))}">
   <div class="card-ic">🩺</div>
   <div class="card-corpo">${tagFamiliar(c.pacienteId)}<strong>${esc(c.medico || c.especialidade || 'Consulta')}</strong>
     <small>${fmtCurta(c.data)}${c.hora ? ' · ' + esc(c.hora) : ''}${c.especialidade && c.medico ? ' · ' + esc(c.especialidade) : ''}</small></div>
-  <span class="badge ${c.status}">${STATUS_CONSULTA[c.status]}</span></a>`;
+  ${seloArquivado(c, true) || `<span class="badge ${c.status}">${STATUS_CONSULTA[c.status]}</span>`}</a>`;
 
-async function telaConsultas() {
-  const cs = doFiltro(await DB.todos('consultas'));
+const caixaBusca = (dica) => `<label class="busca"><span aria-hidden="true">🔎</span>
+  <input type="search" id="busca" placeholder="${esc(dica)}" aria-label="Pesquisar"></label><p class="mudo centro" id="sem-resultado" hidden>Nada encontrado.</p>`;
+function ligarBusca() {
+  const campoBusca = $('#busca');
+  if (!campoBusca) return;
+  campoBusca.oninput = () => {
+    const termo = paraBusca(campoBusca.value.trim());
+    let visiveis = 0;
+    document.querySelectorAll('[data-busca]').forEach((el) => {
+      const ok = !termo || el.dataset.busca.includes(termo);
+      el.hidden = !ok;
+      if (ok) visiveis++;
+    });
+    document.querySelectorAll('.secao[data-grupo]').forEach((h) => {
+      h.hidden = !document.querySelector(`[data-busca][data-grupo="${h.dataset.grupo}"]:not([hidden])`);
+    });
+    $('#sem-resultado').hidden = visiveis > 0;
+  };
+}
+const comGrupo = (html, grupo) => html.replace('<a class="card', `<a data-grupo="${grupo}" class="card`);
+
+async function telaConsultas(_, q = {}) {
+  const verArquivadas = q.ver === 'arquivadas';
+  const todas = doFiltro(await DB.todos('consultas'));
+  const cs = todas.filter((c) => !!c.arquivado === verArquivadas);
+  const nArquivadas = todas.filter((c) => c.arquivado).length;
   const ordem = (c) => (c.data || '') + (c.hora || '');
   const agendadas = cs.filter((c) => c.status === 'agendada').sort((a, b) => ordem(a).localeCompare(ordem(b)));
   const outras = cs.filter((c) => c.status !== 'agendada').sort((a, b) => ordem(b).localeCompare(ordem(a)));
-  let html = seletorFamilia();
-  if (!cs.length) html += vazio('Nenhuma consulta', 'Cadastre a primeira consulta.', '#/consulta/nova', '+ Nova consulta');
-  if (agendadas.length) html += '<h2 class="secao">Agendadas</h2>' + agendadas.map(cardConsulta).join('');
-  if (outras.length) html += '<h2 class="secao">Histórico</h2>' + outras.map(cardConsulta).join('');
+  let html = seletorFamilia() + `<div class="chips">
+    <a class="chip ${verArquivadas ? '' : 'ativo'}" href="#/consultas">Ativas</a>
+    <a class="chip ${verArquivadas ? 'ativo' : ''}" href="#/consultas?ver=arquivadas">🗄️ Arquivadas (${nArquivadas})</a></div>`;
+  if (cs.length) html += caixaBusca('Buscar por médico, especialidade, local…');
+  if (!cs.length) html += verArquivadas ? '<p class="mudo centro">Nenhuma consulta arquivada.</p>'
+    : vazio('Nenhuma consulta', 'Cadastre a primeira consulta.', '#/consulta/nova', '+ Nova consulta');
+  if (agendadas.length) html += '<h2 class="secao" data-grupo="ag">Agendadas</h2>' + agendadas.map((c) => comGrupo(cardConsulta(c), 'ag')).join('');
+  if (outras.length) html += '<h2 class="secao" data-grupo="hi">Histórico</h2>' + outras.map((c) => comGrupo(cardConsulta(c), 'hi')).join('');
   html += botaoFlutuante('#/consulta/nova', '+ Consulta');
   render(html, 'Consultas');
+  ligarBusca();
 }
 
 async function telaConsulta(id) {
@@ -293,6 +351,8 @@ async function telaConsulta(id) {
   }
 
   render(`<div class="detalhe">
+    ${c.arquivado ? `<div class="aviso">🗄️ Esta consulta está arquivada: não aparece na agenda nem nas pendências.
+      <button class="btn pequeno" id="desarquivar">Desarquivar</button></div>` : ''}
     <div class="cabeca">
       ${f ? `<a class="familiar-linha" href="#/familiar/${f.id}">${avatar(f, 'mini')}${esc(f.nome)}</a>` : ''}
       <span class="badge ${c.status}">${STATUS_CONSULTA[c.status]}</span>
@@ -354,16 +414,26 @@ async function telaConsulta(id) {
   if (bIcs) bIcs.onclick = () => baixarICS({ chave: 'c-' + c.id, data: c.data, hora: c.hora,
     titulo: `Consulta${c.medico ? ' com ' + c.medico : ''}${mostrarNomesCalendario() ? ' (' + nomeFamiliar(c.pacienteId) + ')' : ''}`,
     local: c.local, descricao: c.assunto });
+  const bDesarq = $('#desarquivar');
+  if (bDesarq) bDesarq.onclick = async () => {
+    await DB.salvar('consultas', { ...c, arquivado: false, arquivadoEm: null });
+    toast('Consulta desarquivada ✓');
+    telaConsulta(id);
+  };
   $('#excluir').onclick = async () => {
-    if (!confirm('Excluir esta consulta e seus documentos? (Os exames pedidos nela serão mantidos.)')) return;
-    const agora = Date.now();
-    // Junto: apaga documentos e desfaz vínculos que apontavam para esta consulta
-    await DB.lote(['consultas', 'exames', 'anexos'], (s) => {
-      for (const a of anexos) s.anexos.delete(a.id);
-      for (const e of exames) s.exames.put({ ...e, consultaId: null, atualizadoEm: agora });
-      for (const r of todasConsultas.filter((x) => x.consultaOrigemId === id)) s.consultas.put({ ...r, consultaOrigemId: null, atualizadoEm: agora });
-      s.consultas.delete(id);
-    });
+    const v = vinculosDaConsulta(c, todasConsultas, todosExames, anexos);
+    // Com vínculos: arquiva em vez de excluir, para não quebrar o histórico
+    if (v.total) {
+      if (c.arquivado) return avisar(`Esta consulta tem ${descreverVinculos(v)}. Ela já está arquivada e não pode ser excluída, para manter o histórico completo.`, 'Consulta arquivada');
+      if (!(await confirmar(`Esta consulta tem ${descreverVinculos(v)}.\n\nPara não perder o histórico, em vez de excluir ela será ARQUIVADA: sai da agenda e das pendências, mas continua em "Arquivadas", no histórico e na jornada. Você pode desarquivar quando quiser.`,
+        { titulo: 'Arquivar em vez de excluir', sim: '🗄️ Arquivar' }))) return;
+      await DB.salvar('consultas', { ...c, arquivado: true, arquivadoEm: Date.now() });
+      toast('Consulta arquivada ✓');
+      return telaConsulta(id);
+    }
+    if (!(await confirmar('Esta consulta não tem exames, documentos nem retornos ligados a ela. Esta ação não pode ser desfeita.',
+      { titulo: 'Excluir consulta?', sim: '🗑️ Excluir', perigo: true }))) return;
+    await DB.apagar('consultas', id);
     toast('Consulta excluída');
     location.hash = '#/consultas';
   };
@@ -427,7 +497,8 @@ async function telaFormConsulta(id, q = {}) {
         const erroEx = validarExame({ ...e, pacienteId: novo.pacienteId }, cs.map((x) => (x.id === id ? novo : x)));
         if (erroEx) return toast('Não foi possível trocar o familiar: ' + erroEx);
       }
-      if (!confirm(`Os ${ligados.length} exame(s) desta consulta também passarão para ${nomeFamiliar(novo.pacienteId)}. Continuar?`)) return;
+      if (!(await confirmar(`Os ${ligados.length} exame(s) pedidos nesta consulta também passarão para ${nomeFamiliar(novo.pacienteId)}.`,
+        { titulo: 'Trocar o familiar?', sim: 'Trocar' }))) return;
     }
     const agora = Date.now();
     await DB.lote(['consultas', 'exames'], (s) => {
@@ -443,25 +514,30 @@ async function telaFormConsulta(id, q = {}) {
 
 // ===================== Exames =====================
 function cardExame(e) {
-  return `<a class="card exame" href="#/exame/${e.id}">
+  return `<a class="card exame ${e.arquivado ? 'esmaecido' : ''}" href="#/exame/${e.id}"
+    data-busca="${esc(paraBusca(e.nome, e.medico, e.especialidade, e.localExame, e.resumo, nomeFamiliar(e.pacienteId)))}">
     <div class="card-ic">🧪</div>
     <div class="card-corpo">${tagFamiliar(e.pacienteId)}<strong>${esc(e.nome)}</strong>
       <small>${esc([e.medico, e.especialidade].filter(Boolean).join(' · ') || '—')}</small></div>
-    <span class="badge ${e.status}">${STATUS_EXAME[e.status]}</span></a>`;
+    ${seloArquivado(e) || `<span class="badge ${e.status}">${STATUS_EXAME[e.status]}</span>`}</a>`;
 }
 
 async function telaExames(_, q = {}) {
   const filtro = q.filtro || 'todos';
-  const es = doFiltro(await DB.todos('exames')).sort((a, b) => (b.dataSolicitacao || '').localeCompare(a.dataSolicitacao || ''));
-  const filtros = { todos: 'Todos', solicitado: 'Sem data', marcado: 'Marcados', realizado: 'Aguardando', resultado: 'Concluídos' };
-  const lista = filtro === 'todos' ? es : es.filter((e) => e.status === filtro);
+  const todos = doFiltro(await DB.todos('exames')).sort((a, b) => (b.dataSolicitacao || '').localeCompare(a.dataSolicitacao || ''));
+  const es = todos.filter((e) => !e.arquivado);
+  const filtros = { todos: 'Todos', solicitado: 'Sem data', marcado: 'Marcados', realizado: 'Aguardando', resultado: 'Concluídos',
+    arquivados: `🗄️ Arquivados (${todos.length - es.length})` };
+  const lista = filtro === 'arquivados' ? todos.filter((e) => e.arquivado) : filtro === 'todos' ? es : es.filter((e) => e.status === filtro);
   let html = seletorFamilia() + `<div class="chips">${Object.entries(filtros).map(([k, v]) =>
     `<a class="chip ${k === filtro ? 'ativo' : ''}" href="#/exames?filtro=${k}">${v}</a>`).join('')}</div>`;
-  if (!es.length) html += vazio('Nenhum exame', 'Os pedidos de exame ficam ligados à consulta em que foram pedidos. Você também pode cadastrar um avulso.', '#/exame/novo', '+ Novo exame');
+  if (lista.length) html += caixaBusca('Buscar por exame, médico, local…');
+  if (!todos.length) html += vazio('Nenhum exame', 'Os pedidos de exame ficam ligados à consulta em que foram pedidos. Você também pode cadastrar um avulso.', '#/exame/novo', '+ Novo exame');
   else if (!lista.length) html += '<p class="mudo centro">Nenhum exame nesta situação.</p>';
   html += lista.map(cardExame).join('');
   html += botaoFlutuante('#/exame/novo', '+ Exame');
   render(html, 'Exames');
+  ligarBusca();
 }
 
 async function telaExame(id) {
@@ -521,6 +597,8 @@ async function telaExame(id) {
   }
 
   render(`<div class="detalhe">
+    ${e.arquivado ? `<div class="aviso">🗄️ Este exame está arquivado: não aparece na agenda nem nas pendências.
+      <button class="btn pequeno" id="desarquivar">Desarquivar</button></div>` : ''}
     <div class="cabeca">
       ${f ? `<a class="familiar-linha" href="#/familiar/${f.id}">${avatar(f, 'mini')}${esc(f.nome)}</a>` : ''}
       <span class="badge ${e.status}">${STATUS_EXAME[e.status]}</span>
@@ -571,17 +649,22 @@ async function telaExame(id) {
     }
   };
 
+  const bDesarq = $('#desarquivar');
+  if (bDesarq) bDesarq.onclick = () => salvarEtapa({ arquivado: false, arquivadoEm: null }, 'Exame desarquivado ✓');
   $('#excluir').onclick = async () => {
-    if (!confirm('Excluir este exame e seus arquivos?')) return;
-    const cs = await DB.todos('consultas');
-    const agora = Date.now();
-    await DB.lote(['exames', 'anexos', 'consultas'], (s) => {
-      for (const a of anexos) s.anexos.delete(a.id);
-      for (const c of cs.filter((x) => (x.retornoDe || []).includes(id))) s.consultas.put({ ...c, retornoDe: c.retornoDe.filter((x) => x !== id), atualizadoEm: agora });
-      s.exames.delete(id);
-    });
+    const v = vinculosDoExame(e, await DB.todos('consultas'), anexos);
+    // Com laudo/pedido anexado ou já levado a um retorno: arquiva em vez de excluir
+    if (v.total) {
+      if (e.arquivado) return avisar(`Este exame tem ${descreverVinculos(v)}. Ele já está arquivado e não pode ser excluído, para manter o histórico completo.`, 'Exame arquivado');
+      if (!(await confirmar(`Este exame tem ${descreverVinculos(v)}.\n\nPara não perder o histórico, em vez de excluir ele será ARQUIVADO: sai da agenda e das pendências, mas continua em "Arquivados", no histórico e na jornada. Você pode desarquivar quando quiser.`,
+        { titulo: 'Arquivar em vez de excluir', sim: '🗄️ Arquivar' }))) return;
+      return salvarEtapa({ arquivado: true, arquivadoEm: Date.now() }, 'Exame arquivado ✓');
+    }
+    if (!(await confirmar('Este exame não tem documentos anexados nem está ligado a um retorno. Esta ação não pode ser desfeita.',
+      { titulo: 'Excluir exame?', sim: '🗑️ Excluir', perigo: true }))) return;
+    await DB.apagar('exames', id);
     toast('Exame excluído');
-    history.back();
+    location.hash = e.consultaId ? '#/consulta/' + e.consultaId : '#/exames';
   };
 }
 
@@ -686,14 +769,14 @@ async function telaJornada(id) {
       <a class="j-cab" href="#/consulta/${c.id}">
         <span class="j-ic">${nivel ? '↩️' : '🩺'}</span>
         <span><strong>${nivel ? 'Retorno' : 'Consulta'} · ${esc(c.medico || c.especialidade || '')}</strong>
-        <small>${fmtCurta(c.data)} · ${STATUS_CONSULTA[c.status]}</small></span></a>
+        <small>${fmtCurta(c.data)} · ${STATUS_CONSULTA[c.status]}${c.arquivado ? ' · 🗄️ arquivada' : ''}</small></span></a>
       ${p ? `<p class="j-pend">⚠️ ${esc(p.texto)}</p>` : ''}
       ${n.levouResultados.length ? `<p class="mudo">Levou os resultados de: ${esc(n.levouResultados.map((e) => e.nome).join(', '))}</p>` : ''}
       ${docs(n.documentos)}
       ${n.exames.map(({ exame: e, anexos }) => {
         const pe = pendDe('', e);
         return `<a class="j-exame" href="#/exame/${e.id}">
-          <span class="badge ${e.status}">${STATUS_EXAME[e.status]}</span>
+          ${seloArquivado(e) || `<span class="badge ${e.status}">${STATUS_EXAME[e.status]}</span>`}
           <strong>🧪 ${esc(e.nome)}</strong><small>${passoExame(e)}</small>
           ${pe ? `<small class="j-pend">⚠️ ${esc(pe.texto)}</small>` : ''}${docs(anexos)}</a>`;
       }).join('')}
@@ -789,19 +872,19 @@ async function importarBackup(arquivo) {
   let pacote;
   try { pacote = JSON.parse(await arquivo.text()); } catch { return toast('Arquivo inválido: não é um backup legível.'); }
   let preparado;
-  try { preparado = await prepararRestauracao(pacote); } catch (err) { return alert('Backup não restaurado.\n\n' + err.message); }
+  try { preparado = await prepararRestauracao(pacote); } catch (err) { return avisar(err.message, 'Backup não restaurado'); }
   const d = preparado.dados;
   const resumo = `Familiares: ${d.familiares.length}\nConsultas: ${d.consultas.length}\nExames: ${d.exames.length}\nMédicos: ${d.medicos.length}\nArquivos: ${d.anexos.length}`
     + (preparado.relatorio.familiarCriado ? '\n\n(Backup de versão antiga: os registros serão ligados ao perfil principal.)' : '');
-  if (!confirm(`Restaurar este backup?\n\n${resumo}\n\nIsso vai SUBSTITUIR todos os dados atuais deste aparelho.`)) return;
-  if (confirm('Antes de restaurar, quer gerar um backup dos dados atuais por segurança? (Recomendado)')) {
+  if (!(await confirmar(`${resumo}\n\nIsso vai SUBSTITUIR todos os dados atuais deste aparelho.`, { titulo: 'Restaurar este backup?', sim: 'Restaurar', perigo: true }))) return;
+  if (await confirmar('Antes de restaurar, quer gerar um backup dos dados atuais por segurança?', { titulo: 'Backup de segurança', sim: 'Sim, gerar (recomendado)', nao: 'Não' })) {
     if (!(await exportarBackup())) return;
   }
   try {
     await restaurarDados(d);
   } catch (err) {
     registrarErro('restauração', err);
-    return alert('A restauração falhou e nada foi alterado.\n\n' + err.message);
+    return avisar('Nada foi alterado.\n\n' + err.message, 'A restauração falhou');
   }
   await sincronizarMedicos();
   definirFiltro('todos');

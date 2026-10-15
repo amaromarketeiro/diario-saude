@@ -1,9 +1,9 @@
 // Service worker: permite abrir o app sem internet e mostrar avisos.
 // Ao atualizar o app, aumente o número da versão aqui e o "v=" no index.html.
-const VERSAO = 'v4';
+const VERSAO = 'v5';
 const CACHE = 'diario-saude-' + VERSAO;
-const ARQUIVOS = ['./', 'index.html', 'style.css?v=4', 'db.js?v=4', 'nucleo.js?v=4', 'familia.js?v=4',
-  'medicos.js?v=4', 'relatorios.js?v=4', 'app.js?v=4', 'manifest.json', 'icon.svg'];
+const ARQUIVOS = ['./', 'index.html', 'style.css?v=5', 'db.js?v=5', 'nucleo.js?v=5', 'familia.js?v=5',
+  'medicos.js?v=5', 'relatorios.js?v=5', 'app.js?v=5', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ARQUIVOS)));
@@ -17,10 +17,12 @@ self.addEventListener('activate', (e) => {
 });
 
 // Tenta a internet primeiro (pega sempre a versão mais nova); sem internet, usa a cópia salva.
+// cache: 'no-cache' obriga o navegador a confirmar com o servidor se o arquivo mudou,
+// em vez de usar uma cópia antiga do cache HTTP (isso fazia a página velha aparecer após atualizações).
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' })
       .then((r) => { if (r.ok) { const copia = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copia)); } return r; })
       .catch(() => caches.match(e.request, { ignoreSearch: e.request.mode === 'navigate' }).then((r) => r || caches.match('index.html')))
   );

@@ -13,6 +13,7 @@ async function registrarMedico(nome, dados = {}, medicos = null) {
   const m = acharMedico(medicos, nome);
   if (m) {
     let mudou = false;
+    if (m.arquivado) { m.arquivado = false; mudou = true; } // voltou a ser usado: reativa
     for (const k of ['especialidade', 'local']) if (!m[k] && dados[k]) { m[k] = dados[k]; mudou = true; }
     if (mudou) await DB.salvar('medicos', m);
     return;
@@ -49,11 +50,13 @@ const cardMedico = (m, detalhe = '') => `<a class="card" href="#/medico/${m.id}"
   <span class="seta">›</span></a>`;
 
 async function telaMedicos() {
-  const ms = (await DB.todos('medicos')).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const todos = (await DB.todos('medicos')).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const ms = todos.filter((m) => !m.arquivado), arquivados = todos.filter((m) => m.arquivado);
   let html = ms.length
     ? '<p class="mudo">Ao escolher um destes médicos numa consulta ou exame, a especialidade é preenchida sozinha.</p>'
     : vazio('Nenhum médico cadastrado', 'Cadastre os médicos que você consulta. Médicos digitados nas consultas também entram aqui sozinhos.', '#/medico/novo', '+ Cadastrar médico');
   html += ms.map((m) => cardMedico(m)).join('');
+  if (arquivados.length) html += `<h2 class="secao">🗄️ Arquivados</h2>${arquivados.map((m) => cardMedico(m)).join('')}`;
   html += botaoFlutuante('#/medico/novo', '+ Médico');
   render(html, 'Médicos', true);
 }
@@ -70,6 +73,8 @@ async function telaMedico(id) {
   const proxima = consultas.filter((c) => c.status === 'agendada' && c.data >= hoje()).sort((a, b) => a.data.localeCompare(b.data))[0];
 
   render(`${seletorFamilia()}<div class="detalhe">
+    ${m.arquivado ? `<div class="aviso">🗄️ Este médico está arquivado: não aparece nas sugestões dos formulários.
+      <button class="btn pequeno" id="desarquivar">Desarquivar</button></div>` : ''}
     <div class="cabeca">
       <h2>${esc(m.nome)}</h2>
       <p>${esc(m.especialidade || 'Especialidade não informada')}</p>
@@ -90,8 +95,26 @@ async function telaMedico(id) {
     </div>
   </div>`, 'Médico', true);
 
+  const bDesarq = $('#desarquivar');
+  if (bDesarq) bDesarq.onclick = async () => {
+    await DB.salvar('medicos', { ...m, arquivado: false });
+    toast('Médico desarquivado ✓');
+    telaMedico(id);
+  };
   $('#excluir').onclick = async () => {
-    if (!confirm('Excluir o cadastro deste médico? As consultas e exames dele continuam salvos.')) return;
+    // Conta em TODA a família (não só no filtro atual)
+    const v = { consultas: cs.filter((c) => normalizar(c.medico) === n).length, exames: es.filter((e) => normalizar(e.medico) === n).length };
+    if (v.consultas + v.exames) {
+      const texto = descreverVinculos({ consultas: v.consultas, exames: v.exames });
+      if (m.arquivado) return avisar(`Este médico aparece em ${texto}. Ele já está arquivado e não pode ser excluído, para manter o histórico.`, 'Médico arquivado');
+      if (!(await confirmar(`Este médico aparece em ${texto}.\n\nPara não perder o histórico, em vez de excluir ele será ARQUIVADO: deixa de aparecer nas sugestões, mas o histórico continua. Se você usar o nome dele de novo, ele volta sozinho.`,
+        { titulo: 'Arquivar em vez de excluir', sim: '🗄️ Arquivar' }))) return;
+      await DB.salvar('medicos', { ...m, arquivado: true });
+      toast('Médico arquivado ✓');
+      return telaMedico(id);
+    }
+    if (!(await confirmar('Nenhuma consulta ou exame usa este médico. Esta ação não pode ser desfeita.',
+      { titulo: 'Excluir médico?', sim: '🗑️ Excluir', perigo: true }))) return;
     await DB.apagar('medicos', id);
     toast('Médico excluído');
     location.hash = '#/medicos';

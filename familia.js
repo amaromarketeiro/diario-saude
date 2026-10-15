@@ -101,7 +101,7 @@ async function telaFamiliar(id) {
   const consultas = cs.filter((c) => c.pacienteId === id);
   const exames = es.filter((e) => e.pacienteId === id);
   const pend = calcularPendencias(consultas, exames);
-  const proximas = consultas.filter((c) => c.status === 'agendada' && c.data >= hoje()).sort((a, b) => a.data.localeCompare(b.data));
+  const proximas = consultas.filter((c) => c.status === 'agendada' && !c.arquivado && c.data >= hoje()).sort((a, b) => a.data.localeCompare(b.data));
   const temRegistros = consultas.length + exames.length > 0;
   const outros = FAMILIA.ativos.filter((x) => x.id !== id);
 
@@ -133,10 +133,12 @@ async function telaFamiliar(id) {
       ${!f.principal ? '<button class="btn perigo" id="excluir">🗑️ Excluir</button>' : ''}
     </div>
     ${!f.principal && temRegistros ? `<div class="bloco nao-imprimir" id="painel-excluir" hidden>
-      <h3>Excluir ${esc(nomeCurto(f))}</h3>
-      <p>Este familiar tem <strong>${consultas.length} consulta(s)</strong> e <strong>${exames.length} exame(s)</strong>.
-        Para não perder o histórico, escolha uma opção:</p>
-      <p class="mudo">• <strong>Arquivar</strong> (recomendado): some das listas, mas o histórico fica guardado.</p>
+      <h3>Em vez de excluir, arquive</h3>
+      <p>${esc(nomeCurto(f))} tem <strong>${consultas.length} consulta(s)</strong> e <strong>${exames.length} exame(s)</strong>.
+        Para não perder o histórico, o familiar é <strong>arquivado</strong>: sai do seletor, da agenda e das pendências,
+        mas tudo continua guardado e pode ser reativado.</p>
+      ${f.status !== 'arquivado' ? '<button class="btn primario" id="arquivar-painel">🗄️ Arquivar (recomendado)</button>' : '<p class="mudo">✔ Este familiar já está arquivado.</p>'}
+      <p class="mudo">Se os registros foram cadastrados no familiar errado, você pode passá-los para outra pessoa e então excluir este cadastro:</p>
       ${outros.length ? `<label class="campo"><span>Transferir os registros para</span><select id="destino">
         ${outros.map((x) => `<option value="${x.id}">${esc(x.nome)}</option>`).join('')}</select></label>
         <button class="btn perigo" id="transferir">Transferir registros e excluir</button>` : '<p class="mudo">Para excluir, cadastre antes outro familiar para receber os registros.</p>'}
@@ -146,7 +148,7 @@ async function telaFamiliar(id) {
   $('#ver-agenda').onclick = () => { definirFiltro(id); location.hash = '#/agenda'; };
   const bPrincipal = $('#tornar-principal');
   if (bPrincipal) bPrincipal.onclick = async () => {
-    if (!confirm(`Tornar ${f.nome} o perfil principal?`)) return;
+    if (!(await confirmar(`${f.nome} passará a ser o perfil principal (o titular do app).`, { titulo: 'Trocar o perfil principal?', sim: 'Tornar principal' }))) return;
     const agora = Date.now();
     await DB.lote(['familiares'], (s) => {
       for (const x of FAMILIA.lista) if (x.principal || x.id === id) s.familiares.put({ ...x, principal: x.id === id, atualizadoEm: agora });
@@ -154,19 +156,24 @@ async function telaFamiliar(id) {
     toast('Perfil principal alterado ✓');
     telaFamiliar(id);
   };
-  const bArquivar = $('#arquivar');
-  if (bArquivar) bArquivar.onclick = async () => {
+  const arquivarFamiliar = async () => {
     const arquivar = f.status !== 'arquivado';
-    if (arquivar && !confirm(`Arquivar ${f.nome}? O histórico continua guardado e pode ser reativado depois.`)) return;
+    if (arquivar && !(await confirmar(`${f.nome} sai do seletor, da agenda e das pendências. Todo o histórico continua guardado e pode ser reativado depois.`,
+      { titulo: 'Arquivar familiar?', sim: '🗄️ Arquivar' }))) return;
     await DB.salvar('familiares', { ...f, status: arquivar ? 'arquivado' : 'ativo' });
     if (arquivar && filtroAtual() === id) definirFiltro('todos');
     toast(arquivar ? 'Familiar arquivado' : 'Familiar reativado ✓');
     telaFamiliar(id);
   };
+  const bArquivar = $('#arquivar');
+  if (bArquivar) bArquivar.onclick = arquivarFamiliar;
+  const bArqPainel = $('#arquivar-painel');
+  if (bArqPainel) bArqPainel.onclick = arquivarFamiliar;
   const bExcluir = $('#excluir');
   if (bExcluir) bExcluir.onclick = async () => {
     if (temRegistros) { $('#painel-excluir').hidden = false; $('#painel-excluir').scrollIntoView({ behavior: 'smooth' }); return; }
-    if (!confirm(`Excluir ${f.nome}? Não há consultas nem exames ligados a este familiar.`)) return;
+    if (!(await confirmar(`Não há consultas nem exames ligados a ${f.nome}. Esta ação não pode ser desfeita.`,
+      { titulo: 'Excluir familiar?', sim: '🗑️ Excluir', perigo: true }))) return;
     await DB.apagar('familiares', id);
     if (filtroAtual() === id) definirFiltro('todos');
     toast('Familiar excluído');
@@ -175,7 +182,8 @@ async function telaFamiliar(id) {
   const bTransf = $('#transferir');
   if (bTransf) bTransf.onclick = async () => {
     const destino = FAMILIA.porId.get($('#destino').value);
-    if (!confirm(`Transferir ${consultas.length} consulta(s) e ${exames.length} exame(s) para ${destino.nome} e excluir ${f.nome}? Esta ação não pode ser desfeita.`)) return;
+    if (!(await confirmar(`${consultas.length} consulta(s) e ${exames.length} exame(s) passarão para ${destino.nome}, e o cadastro de ${f.nome} será excluído. Esta ação não pode ser desfeita.`,
+      { titulo: 'Transferir e excluir?', sim: 'Transferir e excluir', perigo: true }))) return;
     const agora = Date.now();
     // Tudo junto: consultas, exames e retornos passam para o mesmo familiar, mantendo os vínculos
     await DB.lote(['consultas', 'exames', 'familiares'], (s) => {

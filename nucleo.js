@@ -144,8 +144,44 @@ async function migrarBanco() {
   return { migrado: true, relatorio };
 }
 
+// ===================== Arquivamento =====================
+// Registro com vínculos é arquivado (nunca excluído), para não quebrar o histórico.
+function vinculosDaConsulta(c, cs, es, anexos) {
+  const v = {
+    exames: es.filter((e) => e.consultaId === c.id).length,
+    documentos: anexos.filter((a) => a.tipoDono === 'consulta' && a.idDono === c.id).length,
+    retornos: cs.filter((x) => x.consultaOrigemId === c.id).length,
+    resultadosLevados: (c.retornoDe || []).length,
+  };
+  v.total = v.exames + v.documentos + v.retornos + v.resultadosLevados;
+  return v;
+}
+
+function vinculosDoExame(e, cs, anexos) {
+  const v = {
+    documentos: anexos.filter((a) => a.tipoDono === 'exame' && a.idDono === e.id).length,
+    retornos: cs.filter((c) => (c.retornoDe || []).includes(e.id)).length,
+  };
+  v.total = v.documentos + v.retornos;
+  return v;
+}
+
+function descreverVinculos(v) {
+  const partes = [];
+  if (v.exames) partes.push(`${v.exames} exame(s) pedido(s)`);
+  if (v.documentos) partes.push(`${v.documentos} documento(s) anexado(s)`);
+  if (v.retornos) partes.push(`${v.retornos} retorno(s) ligado(s)`);
+  if (v.resultadosLevados) partes.push(`${v.resultadosLevados} resultado(s) de exame levado(s)`);
+  if (v.consultas) partes.push(`${v.consultas} consulta(s)`);
+  return partes.join(', ');
+}
+
+const ativo = (x) => !x.arquivado;
+
 // ===================== Pendências (sempre calculadas, nunca guardadas) =====================
 function calcularPendencias(cs, es, h = hoje()) {
+  cs = cs.filter(ativo);
+  es = es.filter(ativo);
   const p = [];
   const ativas = cs.filter((c) => c.status !== 'cancelada');
   const examesComRetorno = new Set(ativas.flatMap((c) => c.retornoDe || []));
@@ -194,7 +230,8 @@ const NOMES_PENDENCIA = {
 // Monta os dados iniciais de uma consulta de retorno. Junta os exames da mesma consulta de origem
 // que já têm resultado e ainda não têm retorno, SEMPRE do mesmo familiar.
 function prepararRetorno({ exameId, consultaOrigemId }, cs, es) {
-  const jaTemRetorno = new Set(cs.filter((c) => c.status !== 'cancelada').flatMap((c) => c.retornoDe || []));
+  const jaTemRetorno = new Set(cs.filter((c) => c.status !== 'cancelada' && ativo(c)).flatMap((c) => c.retornoDe || []));
+  es = es.filter((e) => ativo(e) || e.id === exameId);
   const exame = exameId ? es.find((e) => e.id === exameId) : null;
   let origem = consultaOrigemId ? cs.find((c) => c.id === consultaOrigemId) : null;
   if (!origem && exame?.consultaId) origem = cs.find((c) => c.id === exame.consultaId);
